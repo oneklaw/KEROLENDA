@@ -1,0 +1,6 @@
+{
+  "name": "KEROLENDA - Microfinance & Lending Management System",
+  "description": "Multi-tenant SaaS for lending, savings, shares, real-time expense tracking, and intuitive financial visualization dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
