@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { exportLoanPortfolioPDF } from '../utils/pdfExport';
 import { LoanCalculatorModal } from './LoanCalculatorModal';
+import { LoanCalculatorWidget } from './LoanCalculatorWidget';
 import {
   findUpcomingInstallments,
   calculateDaysUntilDue,
@@ -69,6 +70,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   onTriggerReminderScan,
   onOpenNotificationsModal,
 }) => {
+  const [activeLoansSubTab, setActiveLoansSubTab] = useState<'servicing' | 'calculator'>('servicing');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'in_arrears' | 'settled'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
@@ -119,34 +121,65 @@ export const LoansView: React.FC<LoansViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowCalculatorModal(true)}
-            data-testid="quick-loan-calculator-button"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-bold text-xs border border-emerald-300 transition-colors cursor-pointer shadow-2xs"
-            title="Simulate loan amortization and generate repayment schedules without creating an application"
-          >
-            <Calculator className="w-4 h-4 text-emerald-700" />
-            Quick Loan Calculator
-          </button>
+          {/* Subtab Switcher */}
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveLoansSubTab('servicing')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeLoansSubTab === 'servicing'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Active Facilities ({tenantLoans.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLoansSubTab('calculator')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeLoansSubTab === 'calculator'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Calculator className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Loan Calculator</span>
+            </button>
+          </div>
 
           <button
             onClick={() => exportLoanPortfolioPDF(tenant, branch, filteredLoans, customers, currentUser)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
             title="Export branded PDF report with tenant logo, colors & UMRA details"
           >
-            <Download className="w-4 h-4 text-emerald-400" />
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
             Export PDF Report
           </button>
 
           <button
             onClick={onOpenOrigination}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
           >
             <CreditCard className="w-4 h-4" />
             Originate New Loan
           </button>
         </div>
       </div>
+
+      {activeLoansSubTab === 'calculator' ? (
+        <LoanCalculatorWidget
+          tenant={tenant}
+          branch={branch}
+          products={products}
+          currentUser={currentUser}
+          onOriginateWithParams={() => {
+            onOpenOrigination();
+          }}
+        />
+      ) : (
+        <>
 
       {/* Automated 3-Day Upcoming Installment Reminders Banner */}
       <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-sky-950 text-white p-5 rounded-2xl border border-emerald-500/30 shadow-md">
@@ -865,6 +898,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
       {/* Standalone Quick Loan Calculator Modal */}

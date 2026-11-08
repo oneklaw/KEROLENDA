@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 162 162" width="162" height="162">
+<defs>
+<linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A7AD8"/><stop offset="1" stop-color="#063D8C"/></linearGradient>
+<linearGradient id="gg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#5E9E14"/><stop offset="1" stop-color="#8CCB2A"/></linearGradient>
+<linearGradient id="gy" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDB92E"/><stop offset="1" stop-color="#F7941D"/></linearGradient>
+</defs>
+<!-- K monogram: stem + rising arrow + lending leg -->
+<path d="M32 90 L106 140" fill="none" stroke="url(#gy)" stroke-width="32" stroke-linecap="round"/>
+<path d="M30 86 L108 26" fill="none" stroke="url(#gg)" stroke-width="32"/>
+<polygon points="86,0 144,0 144,58" fill="#7AB51D" stroke="#7AB51D" stroke-width="8" stroke-linejoin="round"/>
+<rect x="0" y="0" width="36" height="150" rx="10" fill="url(#gb)"/>
+<circle cx="144" cy="136" r="10" fill="#E53935"/>
+</svg>

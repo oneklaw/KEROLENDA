@@ -265,23 +265,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col">
         {/* Header Bar */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
-              <ShieldCheck className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700/80 p-1 flex items-center justify-center shrink-0">
+              <img
+                src="/assets/aistudio/kerolenda-icon.svg"
+                alt="KEROLENDA Icon"
+                className="w-7 h-7 object-contain"
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm tracking-tight text-white">
-                  KEROLENDA Authentication &amp; Tenant Hub
+                  KEROLENDA
                 </h3>
-                {isMandatory && (
-                  <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded">
-                    Login Required
-                  </span>
-                )}
+                <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  Financial Platform
+                </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Single Sign-On • Automated Company Routing • Multi-Factor Verification
+                Institutional Microfinance Management System
               </p>
             </div>
           </div>
@@ -339,12 +341,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* MODE 1: LOGIN (Email & Password ONLY — NO Company Select!) */}
           {mode === 'login' && (
             <form onSubmit={handleInitiateLogin} className="space-y-4 text-xs">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-[11px] flex items-start gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block font-bold text-slate-900">Institutional Multi-Tenant Portal:</strong>
-                  Enter your registered username or organization email. The system validates your credentials,
-                  enforces mandatory two-factor authentication, and routes you strictly into your authorized company workspace.
+              {/* Animated Welcome Hero Banner */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-4 text-white shadow-md border border-slate-700/60">
+                {/* Background ambient glowing orbs */}
+                <div className="absolute -right-8 -top-8 w-28 h-28 bg-emerald-500/20 rounded-full blur-2xl animate-pulse" />
+                <div className="absolute -left-6 -bottom-6 w-24 h-24 bg-teal-500/15 rounded-full blur-xl animate-pulse" />
+
+                {/* Foreground animated content */}
+                <div className="relative z-10 flex items-center gap-4">
+                  {/* Floating Logo Icon with Pulse Ring and Status Beacon */}
+                  <div className="relative shrink-0">
+                    <div className="absolute inset-0 rounded-2xl bg-emerald-500/30 blur-md animate-pulse-ring" />
+                    <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-emerald-500/40 p-2 flex items-center justify-center shadow-lg animate-float-slow">
+                      <img
+                        src="/assets/aistudio/kerolenda-icon.svg"
+                        alt="KEROLENDA Icon"
+                        className="w-8 h-8 object-contain drop-shadow"
+                      />
+                    </div>
+                    {/* Live system status ping */}
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-slate-900"></span>
+                    </span>
+                  </div>
+
+                  {/* Welcoming typography & greetings */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-bold text-sm text-white tracking-tight">
+                        Welcome to KEROLENDA
+                      </h4>
+                      <span className="animate-wave text-sm" role="img" aria-label="wave">
+                        👋
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                      Sign in to access your organization workspace, portfolio, and financial services.
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-300 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Secure Institutional Access
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 

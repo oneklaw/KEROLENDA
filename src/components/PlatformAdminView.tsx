@@ -77,11 +77,17 @@ export const PlatformAdminView: React.FC<PlatformAdminViewProps> = ({
               Environment 1 of 3: Platform Super Administration
             </span>
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-white mt-1 flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-indigo-400" />
-            KEROLENDA SaaS Platform &amp; Tenant Ecosystem
-          </h2>
-          <p className="text-xs text-slate-300 mt-0.5">
+          <div className="flex items-center gap-3 mt-2">
+            <img
+              src="/assets/aistudio/Kerolenda_Logo_v6_f5df2588.svg"
+              alt="KEROLENDA"
+              className="h-9 w-auto object-contain"
+            />
+            <span className="text-xs text-indigo-300 font-semibold pl-2 border-l border-slate-700 hidden sm:inline">
+              Super Admin Ecosystem
+            </span>
+          </div>
+          <p className="text-xs text-slate-300 mt-1">
             Global management of registered lending companies, subscriptions, cross-company credit network integrity, and security audits.
           </p>
         </div>

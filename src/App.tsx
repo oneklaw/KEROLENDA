@@ -1359,15 +1359,11 @@ export default function App() {
         {/* Top Minimal Branding Bar */}
         <header className="max-w-7xl mx-auto w-full flex items-center justify-between py-3 border-b border-slate-800/80">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 font-black text-lg shadow-inner">
-              K
-            </div>
-            <div>
-              <span className="font-black tracking-wider text-white text-base">KEROLENDA</span>
-              <span className="block text-[10px] text-slate-400 tracking-wide">
-                Microfinance &amp; Lending Management SaaS
-              </span>
-            </div>
+            <img
+              src="/assets/aistudio/Kerolenda_Logo_v6_f5df2588.svg"
+              alt="KEROLENDA"
+              className="h-10 sm:h-12 w-auto object-contain"
+            />
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -1674,6 +1670,8 @@ export default function App() {
                   currentUser={currentUser}
                   accounts={tenantAccounts}
                   journals={tenantJournals}
+                  loans={tenantLoans}
+                  customers={tenantCustomers}
                   onAddManualJournal={(entry) => {
                     const newJrn: JournalEntry = {
                       id: `je-man-${Date.now()}`,
@@ -1838,10 +1836,17 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 px-6 text-xs text-slate-500 no-print mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>
-            KEROLENDA SaaS Platform • Multi-tenant Microfinance &amp; Lending Management System
-          </p>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <img
+              src="/assets/aistudio/Kerolenda_Logo_v6_f5df2588.svg"
+              alt="KEROLENDA Logo"
+              className="h-6 w-auto object-contain"
+            />
+            <span className="hidden md:inline text-[11px] text-slate-400">
+              • Tier 4 Financial Institution Software • Licensed Lending Infrastructure
+            </span>
+          </div>
           <p className="text-[11px] text-slate-400">
             Compliant with UMRA Regulations (Uganda Tier 4 MFIs and Money Lenders Act, 2016)
           </p>

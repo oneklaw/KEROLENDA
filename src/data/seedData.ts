@@ -450,6 +450,7 @@ const musaSchedule = calculateSchedule(8_000_000, 18, 12, 'monthly', 'reducing_b
 const bettySchedule = calculateSchedule(3_000_000, 20, 6, 'monthly', 'flat', '2026-08-01', 2.0);
 const harunaSchedule = calculateSchedule(10_000_000, 18, 12, 'monthly', 'reducing_balance', '2026-04-01', 2.0);
 const florenceSchedule = calculateSchedule(4_000_000, 18, 6, 'monthly', 'reducing_balance', '2026-09-01', 2.0);
+const katoSchedule = calculateSchedule(6_000_000, 20, 8, 'monthly', 'reducing_balance', '2026-03-01', 2.0);
 
 export const SEED_LOANS: Loan[] = [
   {
@@ -607,6 +608,45 @@ export const SEED_LOANS: Loan[] = [
       paidInterest: idx === 0 ? inst.interestDue : 0,
       paidFees: idx === 0 ? inst.feesDue : 0,
       paidAt: idx === 0 ? '2026-10-01T15:20:00Z' : undefined,
+    })),
+  },
+  {
+    id: 'loan-kato-05',
+    tenantId: 'tenant-victoria',
+    branchId: 'branch-kla-main',
+    loanNo: 'LN-2026-0188',
+    applicationId: 'app-kato-05',
+    customerId: 'cust-betty',
+    productId: 'prod-sme',
+    currency: 'UGX',
+    principalApproved: 6_000_000,
+    interestRateAnnual: 20.0,
+    interestMethod: 'reducing_balance',
+    termMonths: 8,
+    disbursedAmount: 6_000_000,
+    disbursedAt: '2026-03-01T10:00:00Z',
+    disbursementChannel: 'Stanbic Bank',
+    disbursementRef: 'STB/DISB/990188',
+    maturityDate: '2026-11-01',
+    totalInterestExpected: katoSchedule.totalInterest,
+    totalFeesCharged: 120_000,
+    totalPaidPrincipal: 1_500_000,
+    totalPaidInterest: 320_000,
+    totalPaidFees: 120_000,
+    totalPaidPenalties: 0,
+    principalOutstanding: 4_500_000,
+    interestAccruedOutstanding: 140_000,
+    feesOutstanding: 20_000,
+    penaltiesOutstanding: 80_000,
+    daysPastDue: 52, // PAR 30! Without recovery case
+    status: 'in_arrears',
+    schedule: katoSchedule.installments.map((inst, idx) => ({
+      ...inst,
+      status: idx < 2 ? 'paid' : idx < 5 ? 'overdue' : 'pending',
+      paidPrincipal: idx < 2 ? inst.principalDue : 0,
+      paidInterest: idx < 2 ? inst.interestDue : 0,
+      paidFees: idx === 0 ? inst.feesDue : 0,
+      paidAt: idx < 2 ? `2026-0${idx + 4}-01T12:00:00Z` : undefined,
     })),
   },
 ];

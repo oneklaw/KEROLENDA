@@ -25,6 +25,7 @@ import {
   Download,
 } from 'lucide-react';
 import { DividendProjectionModal } from './DividendProjectionModal';
+import { DividendCalculatorWidget } from './DividendCalculatorWidget';
 import { exportSavingsSharesPDF } from '../utils/pdfExport';
 
 interface SavingsSharesViewProps {
@@ -52,7 +53,7 @@ export const SavingsSharesView: React.FC<SavingsSharesViewProps> = ({
   onWithdrawSavings,
   onPurchaseShares,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'savings' | 'shares'>('savings');
+  const [activeSubTab, setActiveSubTab] = useState<'savings' | 'shares' | 'dividend_calculator'>('savings');
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showBuySharesModal, setShowBuySharesModal] = useState(false);
@@ -133,14 +134,23 @@ export const SavingsSharesView: React.FC<SavingsSharesViewProps> = ({
             >
               Share Capital Registry
             </button>
+            <button
+              onClick={() => setActiveSubTab('dividend_calculator')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeSubTab === 'dividend_calculator' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <PieChart className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Dividend Calculator</span>
+            </button>
           </div>
 
           <button
-            onClick={() => setShowDividendModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer"
-            title="Project share dividends based on share units and return rate"
+            onClick={() => setActiveSubTab('dividend_calculator')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-bold transition-colors cursor-pointer"
+            title="Project share dividends based on share capital and performance percentages"
           >
-            <PieChart className="w-3.5 h-3.5 text-emerald-600" />
+            <PieChart className="w-3.5 h-3.5 text-indigo-600" />
             Project Dividends
           </button>
 
@@ -331,6 +341,17 @@ export const SavingsSharesView: React.FC<SavingsSharesViewProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Main Subtab 3: Standalone Dividend Calculator */}
+      {activeSubTab === 'dividend_calculator' && (
+        <DividendCalculatorWidget
+          tenant={tenant}
+          branch={branch}
+          currentUser={currentUser}
+          shareAccounts={tenantShares}
+          customers={customers}
+        />
       )}
 
       {/* Deposit Modal */}

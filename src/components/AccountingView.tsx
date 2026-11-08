@@ -5,6 +5,8 @@ import {
   Tenant,
   Branch,
   AppUser,
+  Loan,
+  Customer,
 } from '../types';
 import { formatUGX, verifyDoubleEntryJournal } from '../utils/finance';
 import {
@@ -23,6 +25,8 @@ import {
   Filter,
   Check,
   RotateCcw,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import { exportGeneralLedgerPDF } from '../utils/pdfExport';
 import {
@@ -32,6 +36,10 @@ import {
   filterJournalEntries,
   flattenJournalLinesForExport,
 } from '../utils/exportService';
+import {
+  generateDailyInterestAccruals,
+  exportDailyAccrualsCSV,
+} from '../utils/dailyAccrualService';
 
 interface AccountingViewProps {
   tenant: Tenant;
@@ -39,6 +47,8 @@ interface AccountingViewProps {
   currentUser: AppUser;
   accounts: ChartAccount[];
   journals: JournalEntry[];
+  loans?: Loan[];
+  customers?: Customer[];
   onAddManualJournal: (entry: {
     description: string;
     lines: Array<{ accountCode: string; debit: number; credit: number; description: string }>;
@@ -51,10 +61,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   currentUser,
   accounts,
   journals,
+  loans = [],
+  customers = [],
   onAddManualJournal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'coa' | 'journals' | 'trial_balance' | 'financial_statements'>('trial_balance');
+  const [activeTab, setActiveTab] = useState<'coa' | 'journals' | 'trial_balance' | 'financial_statements' | 'daily_accruals'>('trial_balance');
   const [showManualJournalModal, setShowManualJournalModal] = useState(false);
+
+  // Daily Accruals state
+  const [accrualDate, setAccrualDate] = useState<string>('2026-10-29');
+  const [accrualSearch, setAccrualSearch] = useState<string>('');
 
   // Filter & Search states for Transaction Journals
   const [journalSearch, setJournalSearch] = useState('');
@@ -116,6 +132,31 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   const handleExportTrialBalancePDF = () => {
     exportGeneralLedgerPDF(tenant, branch, tenantAccounts, tenantJournals, currentUser);
     showFeedback('Trial balance PDF report downloaded', 'pdf');
+  };
+
+  // Daily Accruals calculation
+  const accrualSummary = generateDailyInterestAccruals(loans, customers, accrualDate);
+  const filteredAccrualEntries = accrualSummary.entries.filter((e) => {
+    const q = accrualSearch.toLowerCase();
+    return (
+      e.loanNo.toLowerCase().includes(q) ||
+      e.borrowerName.toLowerCase().includes(q) ||
+      e.borrowerPhone.includes(q)
+    );
+  });
+
+  const handleExportDailyAccrualsCSV = () => {
+    const csvContent = exportDailyAccrualsCSV(accrualSummary, tenant.displayName);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${tenant.slug}_daily_interest_accruals_${accrualDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showFeedback('Daily interest accruals CSV downloaded', 'csv');
   };
 
   // Filtered Journals calculation
@@ -214,6 +255,15 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               Journal Ledger
             </button>
             <button
+              onClick={() => setActiveTab('daily_accruals')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'daily_accruals' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Daily Accruals</span>
+            </button>
+            <button
               onClick={() => setActiveTab('coa')}
               className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer ${
                 activeTab === 'coa' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -242,9 +292,15 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
             </button>
 
             <button
-              onClick={handleExportTransactionsCSV}
+              onClick={
+                activeTab === 'daily_accruals'
+                  ? handleExportDailyAccrualsCSV
+                  : activeTab === 'trial_balance'
+                  ? handleExportTrialBalanceCSV
+                  : handleExportTransactionsCSV
+              }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs shadow-xs transition-colors cursor-pointer"
-              title="Download transaction journals as CSV spreadsheet for external reporting & compliance"
+              title="Download transaction journals or daily accruals as CSV spreadsheet"
               aria-label="Download CSV"
               data-testid="download-csv-btn"
             >
@@ -725,6 +781,186 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
             <div className="p-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-[11px]">
               <span className="font-bold font-sans block">Accounting Invariant:</span>
               Assets = Liabilities + Equity (100% Balanced). Verified by KEROLENDA audit engine.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Interest Accruals Tab */}
+      {activeTab === 'daily_accruals' && (
+        <div className="space-y-4">
+          {/* Top KPI Cards for Accruals */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-xs text-slate-500 font-medium">Earning Principal Portfolio</span>
+              <p className="text-xl font-bold text-slate-900 font-mono-num mt-1">
+                {formatUGX(accrualSummary.totalEarningPrincipalUGX)}
+              </p>
+              <span className="text-[11px] text-slate-400">{accrualSummary.totalActiveLoans} active facilities</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-xs text-slate-500 font-medium">Daily Accrued Interest</span>
+              <p className="text-xl font-bold text-emerald-700 font-mono-num mt-1">
+                {formatUGX(accrualSummary.totalDailyAccruedInterestUGX)}
+              </p>
+              <span className="text-[11px] text-emerald-600 font-semibold">Earned on {accrualDate}</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-xs text-slate-500 font-medium">Monthly Accrual Run-Rate (30d)</span>
+              <p className="text-xl font-bold text-indigo-700 font-mono-num mt-1">
+                {formatUGX(accrualSummary.projectedMonthlyAccrualUGX)}
+              </p>
+              <span className="text-[11px] text-slate-400">Projected interest recognized</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <span className="text-xs text-slate-500 font-medium">Accounting Double-Entry</span>
+              <p className="text-xs font-bold text-slate-800 font-mono mt-1">
+                DR 1310 / CR 4100
+              </p>
+              <span className="text-[11px] text-slate-400">Accrued Recv / Interest Inc</span>
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-emerald-600" />
+                  Daily Interest Accrual Entries ({filteredAccrualEntries.length} Active Loans)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Automated statutory daily accrual calculation (Actual/365 convention) ensuring transparent revenue recognition.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs">
+                  <span className="text-slate-500 font-medium">Accrual Date:</span>
+                  <input
+                    type="date"
+                    value={accrualDate}
+                    onChange={(e) => setAccrualDate(e.target.value)}
+                    className="font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search loan or borrower..."
+                    value={accrualSearch}
+                    onChange={(e) => setAccrualSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportDailyAccrualsCSV}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-700 font-bold text-[11px] border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Accrual Date</th>
+                    <th className="py-2.5 px-3">Loan Ref</th>
+                    <th className="py-2.5 px-3">Borrower Name</th>
+                    <th className="py-2.5 px-3">Interest Method</th>
+                    <th className="py-2.5 px-3 text-right">Outstanding Principal</th>
+                    <th className="py-2.5 px-3 text-right">Annual Rate</th>
+                    <th className="py-2.5 px-3 text-right">Daily Rate</th>
+                    <th className="py-2.5 px-3 text-right">Daily Accrued Interest</th>
+                    <th className="py-2.5 px-3 text-right">Monthly Run-Rate</th>
+                    <th className="py-2.5 px-3">Double-Entry Posting</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono-num text-slate-700">
+                  {filteredAccrualEntries.map((e) => (
+                    <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-2.5 px-3 font-sans text-slate-600">{e.accrualDate}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900 font-sans">{e.loanNo}</td>
+                      <td className="py-2.5 px-3 font-sans">
+                        <strong className="block text-slate-900">{e.borrowerName}</strong>
+                        <span className="text-[10px] text-slate-400">{e.borrowerPhone}</span>
+                      </td>
+                      <td className="py-2.5 px-3 font-sans">
+                        <span className="text-[11px] capitalize text-slate-700">
+                          {e.interestMethod === 'flat' ? 'Flat Rate' : 'Reducing Balance'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-slate-900">
+                        {formatUGX(e.principalOutstandingUGX)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-700">{e.interestRateAnnual}%</td>
+                      <td className="py-2.5 px-3 text-right text-slate-500 font-mono text-[10px]">{e.dailyRatePercent}%</td>
+                      <td className="py-2.5 px-3 text-right font-bold text-emerald-700">
+                        {formatUGX(e.dailyAccruedInterestUGX)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-indigo-700 font-semibold">
+                        {formatUGX(e.monthlyRunRateUGX)}
+                      </td>
+                      <td className="py-2.5 px-3 font-sans text-[11px]">
+                        <span className="text-slate-800 font-semibold block">DR 1310 (Accrued Recv)</span>
+                        <span className="text-emerald-700 font-semibold block">CR 4100 (Interest Inc)</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-sans">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          Recognized
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredAccrualEntries.length === 0 && (
+                    <tr>
+                      <td colSpan={11} className="py-6 text-center text-slate-400 font-sans">
+                        No active loans found matching query.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {filteredAccrualEntries.length > 0 && (
+                  <tfoot className="bg-slate-50 font-bold border-t border-slate-200 font-mono-num text-slate-900 text-xs">
+                    <tr>
+                      <td colSpan={4} className="py-3 px-3 font-sans">
+                        Total Daily Interest Accruals ({filteredAccrualEntries.length} Facilities):
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        {formatUGX(filteredAccrualEntries.reduce((s, e) => s + e.principalOutstandingUGX, 0))}
+                      </td>
+                      <td colSpan={2}></td>
+                      <td className="py-3 px-3 text-right text-emerald-800 font-extrabold">
+                        {formatUGX(filteredAccrualEntries.reduce((s, e) => s + e.dailyAccruedInterestUGX, 0))}
+                      </td>
+                      <td className="py-3 px-3 text-right text-indigo-800 font-extrabold">
+                        {formatUGX(filteredAccrualEntries.reduce((s, e) => s + e.monthlyRunRateUGX, 0))}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+
+            {/* Statutory Compliance Note */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Statutory Accounting Standard:</strong> Daily interest recognition satisfies UMRA microfinance guidelines and IFRS 9 amortized cost income recognition. Interest ceases daily accrual only upon reclassification to non-accrual / loss status (90+ DPD).
+              </span>
             </div>
           </div>
         </div>

@@ -37,6 +37,7 @@ import {
   Clock,
   PiggyBank,
   Target,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -70,6 +71,8 @@ import {
 import { CollectorDailyOverview } from './CollectorDailyOverview';
 import { LiquidityForecastingWidget } from './LiquidityForecastingWidget';
 import { LoanPortfolioPerformanceD3 } from './LoanPortfolioPerformanceD3';
+import { LoanPortfolioHeatmap } from './LoanPortfolioHeatmap';
+import { identifyUnassignedDelinquentLoans } from '../utils/riskAlertService';
 
 interface DashboardViewProps {
   tenant: Tenant;
@@ -156,6 +159,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // PAR 30 calculations (Standard and Live Reconciled with Payments Stream)
   const parInfo = calculatePAR30(tenantLoans);
   const liveParMetrics = calculateLivePAR30(loans, payments, tenant.id);
+
+  // Risk Alerts: Delinquent facilities (30+ DPD) without active recovery cases
+  const riskAlerts = identifyUnassignedDelinquentLoans(tenantLoans, recoveryCases, customers, tenant.id);
 
   // Portfolio Yield calculation (Actualized Annual Yield for current year)
   const portfolioYield = calculatePortfolioYield(
@@ -459,6 +465,180 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Budgets →
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Risk Alerts: Delinquent Facilities (30+ DPD) without Active Recovery Cases */}
+      <div className="bg-white rounded-2xl border border-rose-200 shadow-xs overflow-hidden">
+        {/* Header Strip */}
+        <div
+          className={`p-4 sm:p-5 border-b ${
+            riskAlerts.totalAlertsCount > 0
+              ? 'bg-gradient-to-r from-rose-950 via-slate-900 to-amber-950 text-white'
+              : 'bg-emerald-950 text-white'
+          } flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
+        >
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`p-2 rounded-xl ${
+                  riskAlerts.totalAlertsCount > 0
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                }`}
+              >
+                <AlertTriangle className="w-5 h-5" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-white tracking-tight">
+                    Risk Alerts: Delinquent Loans (30+ DPD) Requiring Action
+                  </h3>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                      riskAlerts.totalAlertsCount > 0
+                        ? 'bg-rose-500/30 text-rose-200 border border-rose-500/40 animate-pulse'
+                        : 'bg-emerald-500/30 text-emerald-200 border border-emerald-500/40'
+                    }`}
+                  >
+                    {riskAlerts.totalAlertsCount > 0
+                      ? `${riskAlerts.totalAlertsCount} Unassigned Facilities`
+                      : 'All Facilities Handled'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Identifies active facilities with 30+ days past due that do not yet have an active recovery case attached to ensure immediate escalation and loss mitigation.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onNavigateTab('recovery')}
+              className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Open Recovery Desk</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div className="p-4 sm:p-5 space-y-4">
+          {riskAlerts.totalAlertsCount > 0 ? (
+            <>
+              {/* Summary Exposure KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-rose-50/70 p-3.5 rounded-xl border border-rose-200">
+                  <span className="text-[11px] font-semibold text-rose-800 uppercase tracking-wider block">
+                    Unassigned Principal Exposure
+                  </span>
+                  <p className="text-lg font-black text-rose-950 font-mono-num mt-0.5">
+                    {formatUGX(riskAlerts.totalUnassignedPrincipalExposureUGX)}
+                  </p>
+                  <span className="text-[10px] text-rose-700">At-risk capital lacking recovery file</span>
+                </div>
+
+                <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200">
+                  <span className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider block">
+                    Overdue Arrears Demand
+                  </span>
+                  <p className="text-lg font-black text-amber-950 font-mono-num mt-0.5">
+                    {formatUGX(riskAlerts.totalUnassignedArrearsExposureUGX)}
+                  </p>
+                  <span className="text-[10px] text-amber-700">Immediate demand recovery target</span>
+                </div>
+
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider block">
+                    Recommended UMRA Provision
+                  </span>
+                  <p className="text-lg font-black text-slate-900 font-mono-num mt-0.5">
+                    {formatUGX(riskAlerts.totalRecommendedProvisionUGX)}
+                  </p>
+                  <span className="text-[10px] text-slate-500">Statutory loan loss allowance</span>
+                </div>
+              </div>
+
+              {/* List of Unassigned Facilities */}
+              <div className="overflow-x-auto rounded-xl border border-rose-100">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-rose-50/60 text-slate-700 font-bold text-[11px] border-b border-rose-100">
+                    <tr>
+                      <th className="py-2.5 px-3">Loan Ref</th>
+                      <th className="py-2.5 px-3">Borrower / Business</th>
+                      <th className="py-2.5 px-3 text-right">Days Past Due</th>
+                      <th className="py-2.5 px-3">Statutory Risk Bucket</th>
+                      <th className="py-2.5 px-3 text-right">Outstanding Principal</th>
+                      <th className="py-2.5 px-3 text-right">Total Arrears</th>
+                      <th className="py-2.5 px-3 text-center">Recovery Status</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-50 font-mono-num text-slate-700 bg-white">
+                    {riskAlerts.alerts.map((alert) => (
+                      <tr key={alert.loanId} className="hover:bg-rose-50/40 transition-colors">
+                        <td className="py-3 px-3 font-bold text-slate-900 font-sans">{alert.loanNo}</td>
+                        <td className="py-3 px-3 font-sans">
+                          <strong className="block text-slate-900">{alert.customerName}</strong>
+                          <span className="text-[10px] text-slate-500">
+                            {alert.businessName || alert.customerPhone}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                            {alert.daysPastDue} Days Overdue
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-sans">
+                          <span className="text-[11px] font-semibold text-slate-800 block">
+                            {alert.riskCategory}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            Req. {alert.statutoryProvisionPercent}% Provision
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-900">
+                          {formatUGX(alert.principalOutstandingUGX)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-rose-700">
+                          {formatUGX(alert.totalArrearsUGX)}
+                        </td>
+                        <td className="py-3 px-3 text-center font-sans">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600" />
+                            No Active Case
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-sans">
+                          <button
+                            type="button"
+                            onClick={() => onNavigateTab('recovery')}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <span>Initiate Case</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="p-6 text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-900">Zero Unassigned Delinquent Loans</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                All facilities past due 30+ days have active recovery cases and assigned officers in compliance with credit monitoring rules.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1443,6 +1623,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         tenant={tenant}
         loans={loans}
         payments={payments}
+      />
+
+      {/* SECTION: Visual Loan Portfolio Heatmap (Concentration by Sector & Risk Level via Recharts) */}
+      <LoanPortfolioHeatmap
+        loans={loans}
+        customers={customers}
+        onSelectLoan={onSelectLoan}
+        onQuickCollect={onQuickCollect}
+        branchName={branch?.name}
       />
 
       {/* 30-Day Liquidity Forecasting Widget */}

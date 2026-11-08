@@ -15,6 +15,52 @@
   }
 }
 
+@keyframes welcome-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes welcome-wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  20%, 60% {
+    transform: rotate(14deg);
+  }
+  40%, 80% {
+    transform: rotate(-14deg);
+  }
+}
+
+@keyframes welcome-pulse-ring {
+  0%, 100% {
+    transform: scale(0.95);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+.animate-float-slow {
+  animation: welcome-float 3s ease-in-out infinite;
+}
+
+.animate-wave {
+  animation: welcome-wave 2.2s ease-in-out infinite;
+  transform-origin: 70% 70%;
+  display: inline-block;
+}
+
+.animate-pulse-ring {
+  animation: welcome-pulse-ring 2.8s ease-in-out infinite;
+}
+
 /* Custom scrollbars for data tables and queues */
 ::-webkit-scrollbar {
   width: 6px;
