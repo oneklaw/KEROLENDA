@@ -146,6 +146,44 @@ export interface CustomerKYC {
   residenceDistrict: string;
 }
 
+export type CustomerSegment =
+  | 'micro_enterprise'
+  | 'agricultural_sme'
+  | 'vsla_group'
+  | 'salary_earner'
+  | 'youth_trader'
+  | 'women_in_business';
+
+export interface DataProtectionConsent {
+  consentedAt: string;
+  consentVersion: string;
+  crbDisclosureAgreed: boolean;
+  mobileMoneyProcessingAgreed: boolean;
+  marketingOptIn: boolean;
+  dpa2019RegistrationNo: string;
+}
+
+export interface CustomerGroup {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  groupNo: string;
+  name: string;
+  type: 'vsla' | 'sacco_cell' | 'peer_guarantee' | 'solidarity_group';
+  meetingDay: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
+  meetingLocation: string;
+  chairpersonName: string;
+  chairpersonPhone: string;
+  secretaryName: string;
+  secretaryPhone: string;
+  treasurerName: string;
+  treasurerPhone: string;
+  jointLiabilityPledgeUGX: number;
+  totalMembers: number;
+  status: 'active' | 'graduated' | 'dormant';
+  formationDate: string;
+}
+
 export interface Customer {
   id: string;
   tenantId: string;
@@ -164,6 +202,11 @@ export interface Customer {
   status: 'active' | 'blocked' | 'dormant';
   createdAt: string;
   documents?: CustomerDocument[];
+  segment?: CustomerSegment;
+  groupId?: string;
+  groupRole?: 'chairperson' | 'secretary' | 'treasurer' | 'member';
+  dataProtectionConsent?: DataProtectionConsent;
+  verificationBadge?: 'verified' | 'pending' | 'flagged' | 'expired';
 }
 
 export type DocumentCategory =
@@ -176,6 +219,7 @@ export type DocumentCategory =
   | 'utility_bill'
   | 'business_license'
   | 'digital_signature'
+  | 'proof_of_income'
   | 'other';
 
 export type DocumentVerificationStatus = 'verified' | 'pending' | 'rejected';
@@ -231,6 +275,13 @@ export interface LoanApplication {
   requestedTermMonths: number;
   purpose: string;
   guarantorCustomerId?: string;
+  guarantor2CustomerId?: string;
+  guarantor2Name?: string;
+  guarantor2Phone?: string;
+  guarantor2Nin?: string;
+  guarantor2Relationship?: string;
+  guarantor2Occupation?: string;
+  applicantPhotoUrl?: string;
   collateralDescription: string;
   collateralEstimatedValue: number;
   status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'disbursed';
@@ -239,6 +290,65 @@ export interface LoanApplication {
   approvalNotes?: string;
   submittedAt: string;
   decisionAt?: string;
+  routingTier?: 'tier1_officer' | 'tier2_manager' | 'tier3_committee';
+  affordabilityCheck?: LoanAffordabilityResult;
+  stageHistory?: {
+    stage: 'draft' | 'submitted' | 'kyc_verified' | 'affordability_checked' | 'under_review' | 'approved' | 'rejected' | 'disbursed';
+    transitionedAt: string;
+    performedByUserId: string;
+    notes?: string;
+  }[];
+}
+
+export interface LoanAffordabilityResult {
+  monthlyIncomeUGX: number;
+  monthlyExpensesUGX: number;
+  netDisposableIncomeUGX: number;
+  proposedInstallmentUGX: number;
+  dstiRatioPercent: number; // Debt Service to Income
+  disposableBufferUGX: number;
+  loanToIncomeMultiplier: number;
+  collateralCoverageRatioPercent: number;
+  ruleChecks: {
+    dstiPassed: boolean; // DSTI <= 50%
+    disposableBufferPassed: boolean; // Buffer >= UGX 300,000
+    loanMultiplierPassed: boolean; // Loan <= 4x monthly income
+    collateralPassed: boolean; // Collateral >= 120%
+    twoGuarantorsProvided: boolean;
+    photoVerified: boolean;
+  };
+  scorecardVerdict: 'APPROVED_AUTOMATED' | 'BORDERLINE_COMMITTEE' | 'DECLINED_AFFORDABILITY';
+  recommendedLimitUGX: number;
+}
+
+export type TelecomProvider = 'MTN Mobile Money' | 'Airtel Money' | 'Stanbic Bank' | 'Centenary Bank';
+
+export interface MobileMoneyTransaction {
+  id: string;
+  tenantId: string;
+  provider: TelecomProvider;
+  transactionType: 'INCOMING_COLLECTION' | 'OUTGOING_DISBURSEMENT';
+  amount: number;
+  currency: 'UGX';
+  phoneNumberOrAccount: string;
+  recipientLegalName: string;
+  externalReference: string; // e.g. MTN MoMo Txn ID / Stanbic EFT Ref
+  internalReference: string; // Receipt No or Loan Application No
+  status: 'SUCCESS' | 'PENDING_USSD' | 'FAILED' | 'RECONCILED';
+  failureReason?: string;
+  initiatedAt: string;
+  confirmedAt?: string;
+  reconciliationStatus: 'MATCHED' | 'UNMATCHED_INFLOW' | 'VARIANCE_FLAGGED';
+}
+
+export interface ProviderFloatSummary {
+  provider: TelecomProvider;
+  accountNumber: string;
+  currentFloatUGX: number;
+  unreconciledInflowUGX: number;
+  unreconciledOutflowUGX: number;
+  lastReconciledDate: string;
+  status: 'healthy' | 'low_float' | 'reconciliation_due';
 }
 
 export interface LoanInstallment {
@@ -545,6 +655,7 @@ export interface BorrowerAccount {
   registeredAt: string;
   mfaEnabled: boolean;
   preferredMfaMethod: MFAMethod;
+  photoUrl?: string;
 }
 
 export interface BorrowerDirectApplication {
@@ -557,18 +668,32 @@ export interface BorrowerDirectApplication {
   borrowerPhone: string;
   borrowerEmail: string;
   borrowerNin: string;
+  borrowerPhotoUrl: string; // Mandatory profile photo
   productId: string;
   productName: string;
   requestedAmountUGX: number;
   requestedTermMonths: number;
   purpose: string;
   repaymentFrequency: 'monthly' | 'weekly';
+  // Guarantor 1 Details
+  guarantor1Name?: string;
+  guarantor1Phone?: string;
+  guarantor1Nin?: string;
+  guarantor1Relationship?: string;
+  // Guarantor 2 Details (Secondary Guarantor)
+  guarantor2Name?: string;
+  guarantor2Phone?: string;
+  guarantor2Nin?: string;
+  guarantor2Relationship?: string;
+  guarantor2Occupation?: string;
   supportingDocuments: Array<{
     id: string;
     title: string;
     category: string;
     fileUrl: string;
     uploadedAt: string;
+    fileType?: string;
+    fileSize?: number;
   }>;
   status: 'submitted' | 'under_review' | 'approved' | 'rejected' | 'disbursed';
   submittedAt: string;

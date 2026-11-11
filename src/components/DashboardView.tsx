@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Loan,
+  LoanProduct,
   Customer,
   PaymentReceipt,
   ExpenseItem,
@@ -72,6 +73,8 @@ import { CollectorDailyOverview } from './CollectorDailyOverview';
 import { LiquidityForecastingWidget } from './LiquidityForecastingWidget';
 import { LoanPortfolioPerformanceD3 } from './LoanPortfolioPerformanceD3';
 import { LoanPortfolioHeatmap } from './LoanPortfolioHeatmap';
+import { LoanPortfolioYieldChart } from './LoanPortfolioYieldChart';
+import { FloatingQuickActions } from './FloatingQuickActions';
 import { identifyUnassignedDelinquentLoans } from '../utils/riskAlertService';
 
 interface DashboardViewProps {
@@ -87,9 +90,13 @@ interface DashboardViewProps {
   journals?: JournalEntry[];
   savingsAccounts?: SavingsAccount[];
   shareAccounts?: ShareAccount[];
+  loanProducts?: LoanProduct[];
   onSelectLoan: (loan: Loan) => void;
   onQuickCollect: (loan: Loan) => void;
   onNavigateTab: (tab: string) => void;
+  onOpenNewLoan?: () => void;
+  onOpenQuickPayment?: () => void;
+  onOpenNewExpense?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -105,9 +112,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   journals = [],
   savingsAccounts = [],
   shareAccounts = [],
+  loanProducts,
   onSelectLoan,
   onQuickCollect,
   onNavigateTab,
+  onOpenNewLoan,
+  onOpenQuickPayment,
+  onOpenNewExpense,
 }) => {
   const [timeframe, setTimeframe] = useState<'today' | 'this_month' | 'quarter'>('this_month');
   const [selectedProductHover, setSelectedProductHover] = useState<string | null>(null);
@@ -1632,6 +1643,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         onSelectLoan={onSelectLoan}
         onQuickCollect={onQuickCollect}
         branchName={branch?.name}
+      />
+
+      {/* SECTION: Loan Portfolio Yield Chart (Effective EIR vs Nominal Rate across Products via Recharts) */}
+      <LoanPortfolioYieldChart
+        loans={loans}
+        products={loanProducts}
+        branchName={branch?.name}
+        onNavigateTab={onNavigateTab}
+        onOpenNewLoan={onOpenNewLoan}
       />
 
       {/* 30-Day Liquidity Forecasting Widget */}
@@ -3258,6 +3278,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating Quick Actions Menu (Bottom Right) */}
+      <FloatingQuickActions
+        onOpenNewLoan={onOpenNewLoan}
+        onOpenQuickPayment={onOpenQuickPayment}
+        onOpenNewExpense={onOpenNewExpense}
+        onNavigateTab={onNavigateTab}
+      />
     </div>
   );
 };

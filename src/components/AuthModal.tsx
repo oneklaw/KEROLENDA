@@ -9,7 +9,13 @@ import {
   OperatingEnvironment,
 } from '../types';
 import { generateMfaChallenge, verifyMfaChallenge } from '../utils/mfaService';
-import { resolveUserAndCompany, validateUserCredentials, ResolvedAuthIdentity } from '../utils/authResolver';
+import {
+  resolveUserAndCompany,
+  validateUserCredentials,
+  ResolvedAuthIdentity,
+  parseUnifiedCredentials,
+  formatMaskedCredentials,
+} from '../utils/authResolver';
 import {
   ShieldCheck,
   Mail,
@@ -31,12 +37,14 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose?: () => void;
   isMandatory?: boolean;
+  lockoutNotice?: string | null;
   users: AppUser[];
   currentUser: AppUser;
   tenants: Tenant[];
@@ -61,6 +69,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   isMandatory = false,
+  lockoutNotice,
   users,
   currentUser,
   tenants,
@@ -73,10 +82,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Mode: 'login' | 'mfa_verify' | 'register_company' | 'register_borrower'
   const [mode, setMode] = useState<'login' | 'mfa_verify' | 'register_company' | 'register_borrower'>('login');
 
-  // Login Form (Notice: NO company selection input!)
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  // Separate fields for Username and Password
+  const [username, setUsername] = useState('konekalit');
+  const [password, setPassword] = useState('123Bell123');
+  const [showPassword, setShowPassword] = useState(false); // Password masked by default
+  const [showOtp, setShowOtp] = useState(true); // Visible as user types by default
   const [selectedMfaMethod, setSelectedMfaMethod] = useState<MFAMethod>('email');
 
   // Resolved identity and MFA Challenge State
@@ -142,16 +152,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Step 1: Initiate Login -> Auto-detects company from email and triggers MFA
-  const handleInitiateLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Step 1: Initiate Login -> Validates separate username & masked password fields and triggers MFA
+  const handleInitiateLogin = (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
     setMfaError(null);
 
+    const trimmedUser = username.trim();
+
+    if (!trimmedUser) {
+      setMfaError('Please type your username or registered work email in the username field.');
+      return;
+    }
+
+    if (!password) {
+      setMfaError('Please type your account password in the password field.');
+      return;
+    }
+
     // Automatically resolve user, company, role, and environment without user selection!
-    const identity = resolveUserAndCompany(loginEmail, users, tenants, borrowers);
+    const identity = resolveUserAndCompany(trimmedUser, users, tenants, borrowers);
 
     // Validate credentials for users with assigned passwords
-    const credCheck = validateUserCredentials(identity.user, loginPassword);
+    const credCheck = validateUserCredentials(identity.user, password);
     if (!credCheck.valid) {
       setMfaError(credCheck.error || 'Invalid credentials');
       return;
@@ -220,7 +242,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!companyForm.companyName || !companyForm.adminEmail) return;
     onRegisterCompany(companyForm);
     setMode('login');
-    setLoginEmail(companyForm.adminEmail);
+    setUsername(companyForm.adminEmail);
   };
 
   // Submit Borrower Registration
@@ -251,7 +273,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     });
 
     setMode('login');
-    setLoginEmail(borrowerForm.email);
+    setUsername(borrowerForm.email);
   };
 
   return (
@@ -309,7 +331,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }`}
             >
               <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Sign In (MFA)</span>
+              <span>Log In</span>
             </button>
             <button
               onClick={() => setMode('register_company')}
@@ -389,6 +411,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
+              {lockoutNotice && (
+                <div className="p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-900 text-xs flex items-center gap-2.5">
+                  <ShieldAlert className="w-5 h-5 shrink-0 text-amber-600" />
+                  <span className="font-medium">{lockoutNotice}</span>
+                </div>
+              )}
+
               {mfaError && (
                 <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-[11px] flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
@@ -396,53 +425,146 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               )}
 
-              {/* Email Address or Username */}
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Username or Registered Work Email *
-                </label>
-                <div className="relative">
-                  <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter username (e.g. konekalit) or work email"
-                    value={loginEmail}
-                    onChange={(e) => {
-                      setLoginEmail(e.target.value);
-                      setMfaError(null);
-                    }}
-                    className="w-full pl-8 pr-3 py-2 border rounded-lg border-slate-300 font-medium text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Password with Eye Show/Hide Toggle */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="font-semibold text-slate-700">Account Password *</label>
-                </div>
-                <div className="relative">
-                  <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    placeholder="Enter account password"
-                    value={loginPassword}
-                    onChange={(e) => {
-                      setLoginPassword(e.target.value);
-                      setMfaError(null);
-                    }}
-                    className="w-full pl-8 pr-9 py-2 border rounded-lg border-slate-300 font-medium text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    title={showPassword ? 'Hide password' : 'Show password'}
+              {/* Separate Fields for Username and Password */}
+              <div className="space-y-3.5">
+                {/* Field 1: Username / Email */}
+                <div>
+                  <label
+                    htmlFor="usernameInput"
+                    className="font-semibold text-slate-800 flex items-center justify-between text-xs mb-1"
                   >
-                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
+                    <span className="flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Username or Email *</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">
+                      Plain text input
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="usernameInput"
+                      name="username"
+                      type="text"
+                      required
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value);
+                        setMfaError(null);
+                      }}
+                      placeholder="e.g. konekalit or onekalitkenneth@gmail.com"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 font-medium text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition shadow-xs"
+                    />
+                    {username && (
+                      <button
+                        type="button"
+                        onClick={() => setUsername('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs px-1"
+                        title="Clear username"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Field 2: Password (Masked by default) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor="passwordInput"
+                      className="font-semibold text-slate-800 flex items-center gap-1.5 text-xs"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Password (Masked) *</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 cursor-pointer bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg transition-colors"
+                      title={showPassword ? 'Mask password with dots' : 'Show password text'}
+                    >
+                      {showPassword ? (
+                        <>
+                          <EyeOff className="w-3 h-3 text-emerald-700" />
+                          <span>Mask</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3 h-3 text-emerald-700" />
+                          <span>Show</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="passwordInput"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setMfaError(null);
+                      }}
+                      placeholder="Enter account password"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 font-mono text-xs tracking-wider focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition shadow-xs"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
+                    <span>
+                      {showPassword ? (
+                        <span className="text-amber-700 font-medium">⚠️ Password is currently visible</span>
+                      ) : (
+                        <span className="text-emerald-700 font-medium">🔒 Password is masked with secure dots</span>
+                      )}
+                    </span>
+                    <span className="text-slate-400">Press Enter to continue</span>
+                  </div>
+                </div>
+
+                {/* Quick Account Test Selector */}
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                    <span>Quick Test Personas:</span>
+                    <span className="text-[9px] text-slate-400 font-normal">Click to fill</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsername('konekalit');
+                        setPassword('123Bell123');
+                        setMfaError(null);
+                      }}
+                      className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-[10px] font-medium transition cursor-pointer"
+                    >
+                      Platform Admin (konekalit)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsername('sarah.namubiru@victoriamfi.ug');
+                        setPassword('Victoria@2026');
+                        setMfaError(null);
+                      }}
+                      className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-[10px] font-medium transition cursor-pointer"
+                    >
+                      Victoria Admin (sarah)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsername('john.mukasa@victoriamfi.ug');
+                        setPassword('Mukasa@2026');
+                        setMfaError(null);
+                      }}
+                      className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-[10px] font-medium transition cursor-pointer"
+                    >
+                      Credit Officer (john)
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -566,18 +688,95 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <form onSubmit={handleVerifyOtp} className="space-y-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    6-Digit Security Token
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    required
-                    placeholder="• • • • • •"
-                    value={otpInput}
-                    onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="w-full text-center tracking-widest font-mono text-xl py-2.5 border rounded-xl border-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-slate-50"
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-semibold text-slate-700">
+                      6-Digit Security Token *
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                        Visible as you type
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowOtp(!showOtp)}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                        title={showOtp ? 'Switch to masked dots' : 'Make digits visible'}
+                      >
+                        {showOtp ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        <span>{showOtp ? 'Hide' : 'Make Visible'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 6-Digit Segmented Visual Cards (Visible as typed) */}
+                  <div className="grid grid-cols-6 gap-2 mb-2">
+                    {[0, 1, 2, 3, 4, 5].map((index) => {
+                      const digit = otpInput[index];
+                      const isCurrent = otpInput.length === index;
+                      return (
+                        <div
+                          key={index}
+                          className={`h-13 rounded-xl border flex items-center justify-center text-xl font-mono font-extrabold transition-all select-none ${
+                            digit !== undefined
+                              ? 'bg-white border-emerald-500 text-slate-900 shadow-xs ring-2 ring-emerald-500/20'
+                              : isCurrent
+                              ? 'bg-emerald-50/60 border-emerald-400 ring-2 ring-emerald-400/40 animate-pulse'
+                              : 'bg-slate-50 border-slate-200 text-slate-400'
+                          }`}
+                        >
+                          {digit !== undefined ? (showOtp ? digit : '•') : ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Synced Direct Input */}
+                  <div className="relative">
+                    <input
+                      type={showOtp ? 'text' : 'password'}
+                      maxLength={6}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoFocus
+                      required
+                      placeholder="Type 6-digit code (e.g. 849201)"
+                      value={otpInput}
+                      onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full text-center tracking-widest font-mono text-lg py-2 border rounded-xl border-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white shadow-xs"
+                    />
+                    {otpInput.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOtpInput('')}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-semibold cursor-pointer"
+                        title="Clear code"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Live Real-time MFA Code Preview */}
+                  {otpInput.length > 0 && (
+                    <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs animate-in fade-in">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <KeyRound className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-emerald-800 font-medium">Entered MFA Code:</span>
+                        <span className="font-mono font-black text-sm text-emerald-950 tracking-widest">
+                          {showOtp ? otpInput.split('').join(' ') : '• '.repeat(otpInput.length).trim()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-white border border-emerald-300 px-1.5 py-0.5 rounded">
+                          {otpInput.length}/6 digits
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {showOtp ? 'Visible as typed' : 'Masked'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center text-[11px] text-slate-500 mt-1.5 px-1">
                     <span>
                       Expires in:{' '}

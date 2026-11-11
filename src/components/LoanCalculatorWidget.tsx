@@ -18,6 +18,7 @@ import {
   FileCheck,
   CreditCard,
   CheckCircle2,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface LoanCalculatorWidgetProps {
@@ -26,6 +27,7 @@ interface LoanCalculatorWidgetProps {
   products: LoanProduct[];
   currentUser?: AppUser;
   onOriginateWithParams?: (params: { amount: number; termMonths: number; productId: string }) => void;
+  onSwitchToComparison?: () => void;
 }
 
 export const LoanCalculatorWidget: React.FC<LoanCalculatorWidgetProps> = ({
@@ -34,6 +36,7 @@ export const LoanCalculatorWidget: React.FC<LoanCalculatorWidgetProps> = ({
   products = [],
   currentUser,
   onOriginateWithParams,
+  onSwitchToComparison,
 }) => {
   const defaultProduct = products[0];
 
@@ -141,6 +144,16 @@ export const LoanCalculatorWidget: React.FC<LoanCalculatorWidgetProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onSwitchToComparison && (
+            <button
+              type="button"
+              onClick={onSwitchToComparison}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              Compare Products
+            </button>
+          )}
           <button
             type="button"
             onClick={handleResetDefaults}

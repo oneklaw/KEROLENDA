@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveUserAndCompany, validateUserCredentials } from './authResolver';
+import {
+  resolveUserAndCompany,
+  validateUserCredentials,
+  parseUnifiedCredentials,
+  formatMaskedCredentials,
+} from './authResolver';
 import { AppUser, Tenant, BorrowerAccount } from '../types';
 
 const testTenants: Tenant[] = [
@@ -210,3 +215,42 @@ test('resolveUserAndCompany auto-detects unknown email with company domain', () 
   assert.equal(result.tenant?.id, 'tenant-rwenzori');
   assert.equal(result.companyName, 'Rwenzori SACCO');
 });
+
+test('parseUnifiedCredentials accurately parses multi-line username and password in same text area', () => {
+  const parsed = parseUnifiedCredentials('konekalit\n123Bell123');
+  assert.equal(parsed.username, 'konekalit');
+  assert.equal(parsed.password, '123Bell123');
+});
+
+test('parseUnifiedCredentials accurately parses colon-separated credentials in single text area', () => {
+  const parsed = parseUnifiedCredentials('sarah.namubiru@victoriamfi.ug:Victoria@2026');
+  assert.equal(parsed.username, 'sarah.namubiru@victoriamfi.ug');
+  assert.equal(parsed.password, 'Victoria@2026');
+});
+
+test('parseUnifiedCredentials accurately parses whitespace-separated credentials', () => {
+  const parsed = parseUnifiedCredentials('konekalit 123Bell123');
+  assert.equal(parsed.username, 'konekalit');
+  assert.equal(parsed.password, '123Bell123');
+});
+
+test('parseUnifiedCredentials handles username-only input without error', () => {
+  const parsed = parseUnifiedCredentials('konekalit');
+  assert.equal(parsed.username, 'konekalit');
+  assert.equal(parsed.password, '');
+});
+
+test('formatMaskedCredentials masks password while keeping username visible in plain text', () => {
+  // Multi-line
+  const maskedMulti = formatMaskedCredentials('konekalit\n123Bell123', true);
+  assert.equal(maskedMulti, 'konekalit\n••••••••••');
+
+  // Colon separated
+  const maskedColon = formatMaskedCredentials('konekalit:123Bell123', true);
+  assert.equal(maskedColon, 'konekalit:••••••••••');
+
+  // Unmasked preserves plain text
+  const unmasked = formatMaskedCredentials('konekalit\n123Bell123', false);
+  assert.equal(unmasked, 'konekalit\n123Bell123');
+});
+

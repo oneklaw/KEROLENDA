@@ -5,9 +5,15 @@ import { DocumentCategory } from '../types';
  */
 export function autoCategorizeDocument(input: string): DocumentCategory {
   const text = (input || '').toLowerCase();
+  const normalized = text.replace(/[_\-.]/g, ' ');
 
-  if (text.includes('nin') || text.includes('national id') || text.includes('cm8') || text.includes('cf9')) {
-    return text.includes('back') || text.includes('reverse') ? 'national_id_back' : 'national_id_front';
+  if (
+    normalized.includes('nin') ||
+    normalized.includes('national id') ||
+    text.includes('cm8') ||
+    text.includes('cf9')
+  ) {
+    return normalized.includes('back') || normalized.includes('reverse') ? 'national_id_back' : 'national_id_front';
   }
 
   if (
@@ -69,6 +75,21 @@ export function autoCategorizeDocument(input: string): DocumentCategory {
     text.includes('tenancy')
   ) {
     return 'utility_bill';
+  }
+
+  if (
+    text.includes('income') ||
+    text.includes('salary') ||
+    text.includes('payslip') ||
+    text.includes('pay slip') ||
+    text.includes('bank statement') ||
+    text.includes('momo statement') ||
+    text.includes('statement') ||
+    text.includes('payroll') ||
+    text.includes('earnings') ||
+    text.includes('remittance')
+  ) {
+    return 'proof_of_income';
   }
 
   if (

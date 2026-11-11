@@ -8,7 +8,9 @@ import {
   generateVehicleLogbookSvg,
   generateTradingLicenseSvg,
   generateGenericDocumentSvg,
+  generateProofOfIncomeSvg,
 } from './documentTemplates';
+import { autoCategorizeDocument } from './documentScanner';
 
 test('generateNationalIdFrontSvg produces a valid SVG data URI containing customer details', () => {
   const uri = generateNationalIdFrontSvg('Musa Byaruhanga', 'CM84029482718K', '1984-05-18', 'Male');
@@ -62,4 +64,24 @@ test('generateTradingLicenseSvg embeds municipal licensing details', () => {
   const decoded = decodeURIComponent(uri.replace('data:image/svg+xml;utf8,', ''));
   assert.ok(decoded.includes('KCCA TRADING LICENSE'));
   assert.ok(decoded.includes('MUSA HARDWARE LTD'));
+});
+
+test('generateProofOfIncomeSvg generates certified proof of income with monthly cashflow', () => {
+  const uri = generateProofOfIncomeSvg('Florence Achieng', 3500000, 'Fashion Hub Uganda Ltd');
+  assert.ok(uri.startsWith('data:image/svg+xml;utf8,'));
+  const decoded = decodeURIComponent(uri.replace('data:image/svg+xml;utf8,', ''));
+  assert.ok(decoded.includes('PROOF OF INCOME'));
+  assert.ok(decoded.includes('FLORENCE ACHIENG'));
+  assert.ok(decoded.includes('UGX 3,500,000'));
+  assert.ok(decoded.includes('Fashion Hub Uganda Ltd'));
+});
+
+test('autoCategorizeDocument accurately identifies National ID and Proof of Income', () => {
+  assert.equal(autoCategorizeDocument('uganda_national_id_front.jpg'), 'national_id_front');
+  assert.equal(autoCategorizeDocument('national_id_back_barcode.png'), 'national_id_back');
+  assert.equal(autoCategorizeDocument('salary_payslip_october_2026.pdf'), 'proof_of_income');
+  assert.equal(autoCategorizeDocument('stanbic_bank_statement_6months.pdf'), 'proof_of_income');
+  assert.equal(autoCategorizeDocument('mtn_momo_statement_income.png'), 'proof_of_income');
+  assert.equal(autoCategorizeDocument('customer_passport_photo.webp'), 'passport_photo');
+  assert.equal(autoCategorizeDocument('kibanja_land_title_deed.pdf'), 'collateral_proof');
 });

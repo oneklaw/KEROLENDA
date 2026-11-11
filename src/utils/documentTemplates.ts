@@ -310,3 +310,73 @@ export function generateGenericDocumentSvg(title: string, category: string, cust
   </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
+
+export function generateProofOfIncomeSvg(
+  customerName: string,
+  monthlyIncome: number = 2500000,
+  employerOrBusiness: string = 'Commercial Enterprise',
+  period: string = 'Past 6 Months Bank & MoMo Statement'
+): string {
+  const formattedIncome = `UGX ${monthlyIncome.toLocaleString()}`;
+  const netTakeHome = `UGX ${Math.round(monthlyIncome * 0.82).toLocaleString()}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 520" width="100%" height="100%">
+    <rect width="600" height="520" rx="14" fill="#ffffff" stroke="#0284c7" stroke-width="3"/>
+    
+    <!-- Header Banner -->
+    <rect x="0" y="0" width="600" height="72" rx="14" fill="#0369a1"/>
+    <circle cx="48" cy="36" r="22" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2"/>
+    <text x="48" y="42" font-family="sans-serif" font-size="14" font-weight="900" fill="#0369a1" text-anchor="middle">KYC</text>
+    <text x="82" y="30" font-family="sans-serif" font-size="16" font-weight="900" fill="#ffffff">CERTIFIED PROOF OF INCOME &amp; CASH FLOW</text>
+    <text x="82" y="48" font-family="sans-serif" font-size="11" font-weight="700" fill="#bae6fd">OFFICIAL SALARY &amp; TELECOM / BANK STATEMENT VOUCHER</text>
+
+    <!-- Details Grid -->
+    <g transform="translate(36, 92)" font-family="sans-serif">
+      <rect width="528" height="74" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="16" y="22" font-size="10" font-weight="700" fill="#64748b">BENEFICIARY / BORROWER</text>
+      <text x="16" y="44" font-size="16" font-weight="800" fill="#0f172a">${customerName.toUpperCase()}</text>
+      <text x="16" y="62" font-size="11" font-weight="600" fill="#475569">Employer / Business: ${employerOrBusiness}</text>
+
+      <text x="320" y="22" font-size="10" font-weight="700" fill="#64748b">VERIFICATION PERIOD</text>
+      <text x="320" y="42" font-size="13" font-weight="700" fill="#0369a1">${period}</text>
+      <text x="320" y="60" font-size="10" font-weight="600" fill="#16a34a">✓ Validated via Electronic Stamp</text>
+    </g>
+
+    <!-- Financial Breakdown Cards -->
+    <g transform="translate(36, 180)" font-family="sans-serif">
+      <rect x="0" y="0" width="254" height="68" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/>
+      <text x="16" y="24" font-size="11" font-weight="700" fill="#065f46">Gross Monthly Turnover / Salary</text>
+      <text x="16" y="52" font-size="20" font-weight="900" fill="#047857">${formattedIncome}</text>
+
+      <rect x="274" y="0" width="254" height="68" rx="8" fill="#f0f9ff" stroke="#bae6fd"/>
+      <text x="16" y="24" font-size="11" font-weight="700" fill="#075985" transform="translate(274, 0)">Estimated Net Disposable Cash Flow</text>
+      <text x="16" y="52" font-size="20" font-weight="900" fill="#0284c7" transform="translate(274, 0)">${netTakeHome}</text>
+    </g>
+
+    <!-- Cashflow Ledger Entries Simulation -->
+    <g transform="translate(36, 264)" font-family="monospace">
+      <rect width="528" height="150" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <text x="16" y="24" font-size="11" font-weight="800" fill="#1e293b">STAMPED TRANSACTION AUDIT STREAM (LAST 3 CYCLES)</text>
+      <line x1="16" y1="34" x2="512" y2="34" stroke="#cbd5e1"/>
+      
+      <text x="16" y="56" font-size="10" fill="#334155">• 28-SEP-2026: DIRECT CR PAYMENT SALARY/SETTLEMENT: +${formattedIncome} [REF: CR-90142]</text>
+      <text x="16" y="78" font-size="10" fill="#334155">• 28-AUG-2026: DIRECT CR PAYMENT SALARY/SETTLEMENT: +${formattedIncome} [REF: CR-81944]</text>
+      <text x="16" y="100" font-size="10" fill="#334155">• 28-JUL-2026: DIRECT CR PAYMENT SALARY/SETTLEMENT: +${formattedIncome} [REF: CR-72019]</text>
+      <text x="16" y="124" font-size="10" font-weight="700" fill="#0369a1">• AVG MONTHLY CASH VELOCITY: Consistent inflow meets UMRA affordability benchmarks</text>
+    </g>
+
+    <!-- Verification Seal -->
+    <g transform="translate(380, 428)">
+      <circle cx="50" cy="38" r="32" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-dasharray="5,2"/>
+      <text x="50" y="34" font-family="sans-serif" font-size="9" font-weight="900" fill="#0284c7" text-anchor="middle">VERIFIED</text>
+      <text x="50" y="47" font-family="sans-serif" font-size="8" font-weight="800" fill="#0284c7" text-anchor="middle">KYC VAULT</text>
+    </g>
+
+    <text x="210" y="468" font-family="sans-serif" font-size="10" font-weight="700" fill="#64748b">
+      CERTIFIED UNDER UMRA PRUDENTIAL CRITERIA
+    </text>
+    <text x="210" y="484" font-family="sans-serif" font-size="9" fill="#94a3b8">
+      Electronic proof of income record stored securely in customer vault.
+    </text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}

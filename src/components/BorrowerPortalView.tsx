@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { formatUGX } from '../utils/finance';
 import { calculateCreditRisk } from '../utils/creditEngine';
+import { exportLoanApplicationPDF } from '../utils/pdfExport';
 import {
   Building,
   CreditCard,
@@ -32,6 +33,11 @@ import {
   ChevronRight,
   Sparkles,
   Info,
+  Camera,
+  UserCheck,
+  Download,
+  Trash2,
+  Paperclip,
 } from 'lucide-react';
 
 interface BorrowerPortalViewProps {
@@ -73,6 +79,71 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
   const [loanPurpose, setLoanPurpose] = useState('');
   const [repaymentFreq, setRepaymentFreq] = useState<'monthly' | 'weekly'>('monthly');
 
+  // Mandatory Profile Photo State
+  const [borrowerPhotoUrl, setBorrowerPhotoUrl] = useState<string>(
+    currentBorrower.photoUrl ||
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80'
+  );
+
+  // Primary Guarantor (Guarantor 1)
+  const [guarantor1Name, setGuarantor1Name] = useState('Dennis Kakooza');
+  const [guarantor1Phone, setGuarantor1Phone] = useState('+256 772 312 884');
+  const [guarantor1Nin, setGuarantor1Nin] = useState('CM80092384910B');
+  const [guarantor1Relationship, setGuarantor1Relationship] = useState('Business Associate / Fellow Merchant');
+
+  // Second Guarantor (Guarantor 2)
+  const [guarantor2Name, setGuarantor2Name] = useState('Florence Namubiru');
+  const [guarantor2Phone, setGuarantor2Phone] = useState('+256 701 543 219');
+  const [guarantor2Nin, setGuarantor2Nin] = useState('CF87019284712P');
+  const [guarantor2Relationship, setGuarantor2Relationship] = useState('Spouse / Family Co-Signer');
+  const [guarantor2Occupation, setGuarantor2Occupation] = useState('Registered Nurse (Mulago Referral Hospital)');
+
+  // Supporting Documents Upload Registry
+  const [supportingDocs, setSupportingDocs] = useState<
+    Array<{
+      id: string;
+      title: string;
+      category: string;
+      fileUrl: string;
+      fileType?: string;
+      fileSize?: number;
+      uploadedAt: string;
+    }>
+  >([
+    {
+      id: 'doc-init-nin',
+      title: 'Borrower National Identification Card (Front & Reverse)',
+      category: 'KYC Document',
+      fileUrl: '#',
+      fileType: 'image/jpeg',
+      fileSize: 220000,
+      uploadedAt: new Date().toISOString(),
+    },
+    {
+      id: 'doc-init-lc1',
+      title: 'LC1 Village Chairperson Residence Verification Letter',
+      category: 'Proof of Residence',
+      fileUrl: '#',
+      fileType: 'application/pdf',
+      fileSize: 310000,
+      uploadedAt: new Date().toISOString(),
+    },
+    {
+      id: 'doc-init-momo',
+      title: '6-Month MTN/Airtel Mobile Money & Bank Statement',
+      category: 'Financial Statement',
+      fileUrl: '#',
+      fileType: 'application/pdf',
+      fileSize: 580000,
+      uploadedAt: new Date().toISOString(),
+    },
+  ]);
+
+  const [newDocTitle, setNewDocTitle] = useState('');
+  const [newDocCategory, setNewDocCategory] = useState('Trading License / Business Permit');
+  const [applicationError, setApplicationError] = useState<string | null>(null);
+  const [lastSubmittedApp, setLastSubmittedApp] = useState<BorrowerDirectApplication | null>(null);
+
   // Dispute Modal state
   const [showDisputeModal, setShowDisputeModal] = useState<CreditReview | null>(null);
   const [disputeReason, setDisputeReason] = useState('Payment Delay Recorded in Error');
@@ -108,12 +179,48 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
     setActiveTab('apply');
   };
 
+  const handleAddSupportingDocument = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDocTitle.trim()) return;
+
+    const newDoc = {
+      id: `doc-${Date.now()}`,
+      title: newDocTitle.trim(),
+      category: newDocCategory,
+      fileUrl: '#',
+      fileType: newDocTitle.toLowerCase().includes('.pdf') ? 'application/pdf' : 'image/jpeg',
+      fileSize: Math.floor(180000 + Math.random() * 450000),
+      uploadedAt: new Date().toISOString(),
+    };
+
+    setSupportingDocs((prev) => [...prev, newDoc]);
+    setNewDocTitle('');
+  };
+
+  const handleRemoveSupportingDocument = (docId: string) => {
+    setSupportingDocs((prev) => prev.filter((d) => d.id !== docId));
+  };
+
   const handleSubmitLoanApplication = (e: React.FormEvent) => {
     e.preventDefault();
+    setApplicationError(null);
+
+    // MANDATORY PHOTO VALIDATION
+    if (!borrowerPhotoUrl.trim()) {
+      setApplicationError('Mandatory Requirement: All loan applicants must have a verified profile photo attached to their application in accordance with UMRA KYC regulations.');
+      return;
+    }
+
+    // MANDATORY SECOND GUARANTOR VALIDATION
+    if (!guarantor2Name.trim() || !guarantor2Phone.trim() || !guarantor2Nin.trim()) {
+      setApplicationError('Mandatory Requirement: Please provide complete details for Guarantor 2 (Second Guarantor), including Name, Phone, and National ID (NIN).');
+      return;
+    }
+
     const targetTenant = tenants.find((t) => t.id === selectedTenantId);
     if (!targetTenant || !selectedProduct) return;
 
-    onSubmitApplication({
+    const appData = {
       tenantId: targetTenant.id,
       tenantName: targetTenant.displayName,
       borrowerId: currentBorrower.id,
@@ -121,31 +228,37 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
       borrowerPhone: currentBorrower.phone,
       borrowerEmail: currentBorrower.email,
       borrowerNin: currentBorrower.nin,
+      borrowerPhotoUrl: borrowerPhotoUrl.trim(),
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       requestedAmountUGX: Number(requestedAmount),
       requestedTermMonths: Number(requestedTermMonths),
-      purpose: loanPurpose || 'Working capital expansion',
+      purpose: loanPurpose.trim() || 'Working capital enterprise expansion',
       repaymentFrequency: repaymentFreq,
-      supportingDocuments: [
-        {
-          id: `doc-${Date.now()}-nin`,
-          title: 'Borrower National Identification Card',
-          category: 'KYC Document',
-          fileUrl: '#',
-          uploadedAt: new Date().toISOString(),
-        },
-        {
-          id: `doc-${Date.now()}-inc`,
-          title: 'Proof of Business Revenue & Bank/MoMo Statement',
-          category: 'Financial Statement',
-          fileUrl: '#',
-          uploadedAt: new Date().toISOString(),
-        },
-      ],
-    });
+      guarantor1Name: guarantor1Name.trim(),
+      guarantor1Phone: guarantor1Phone.trim(),
+      guarantor1Nin: guarantor1Nin.trim(),
+      guarantor1Relationship: guarantor1Relationship.trim(),
+      guarantor2Name: guarantor2Name.trim(),
+      guarantor2Phone: guarantor2Phone.trim(),
+      guarantor2Nin: guarantor2Nin.trim(),
+      guarantor2Relationship: guarantor2Relationship.trim(),
+      guarantor2Occupation: guarantor2Occupation.trim(),
+      supportingDocuments: supportingDocs,
+    };
 
-    alert(`Loan application submitted to ${targetTenant.displayName}! You can track its review progress under "My Applications & Active Loans".`);
+    onSubmitApplication(appData);
+
+    const createdAppStub: BorrowerDirectApplication = {
+      ...appData,
+      id: `app-submitted-${Date.now()}`,
+      applicationNo: `APP-DIR-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      status: 'submitted',
+      submittedAt: new Date().toISOString(),
+    };
+    setLastSubmittedApp(createdAppStub);
+
+    alert(`Loan application submitted successfully to ${targetTenant.displayName}! You can download your official PDF application dossier immediately.`);
     setLoanPurpose('');
     setActiveTab('my_loans');
   };
@@ -367,62 +480,171 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
 
       {/* TAB 2: APPLY FOR A LOAN WIZARD */}
       {activeTab === 'apply' && (
-        <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
+        <div className="max-w-3xl mx-auto bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
           <div>
             <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
               <PlusCircle className="w-5 h-5 text-emerald-600" />
-              Apply for a Loan from a Participating Company
+              Apply for an Institutional Loan from a Participating Lender
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Your application is routed directly into the selected lender's private workspace. The lender can review your shared credit score while keeping their approval workflow strictly isolated.
+              Compliant with Section 52 of Uganda Tier 4 Microfinance Institutions Act 2016. Dual guarantors, supporting documents, and verified applicant photo required.
             </p>
           </div>
 
-          <form onSubmit={handleSubmitLoanApplication} className="space-y-4 text-xs">
-            {/* 1. Target Company */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Select Lending Company *</label>
-              <select
-                value={selectedTenantId}
-                onChange={(e) => {
-                  setSelectedTenantId(e.target.value);
-                  const firstProd = loanProducts.find((p) => p.tenantId === e.target.value);
-                  if (firstProd) setSelectedProductId(firstProd.id);
-                }}
-                className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.displayName} ({t.legalName})
-                  </option>
-                ))}
-              </select>
+          {applicationError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-xs text-red-700 animate-fadeIn font-medium">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{applicationError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitLoanApplication} className="space-y-5 text-xs">
+            {/* SECTION A: MANDATORY APPLICANT PROFILE PHOTO */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block text-xs flex items-center gap-1.5">
+                    <Camera className="w-4 h-4 text-emerald-600" />
+                    Applicant Profile Photo (Mandatory KYC) *
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    All loan applicants must have a verified profile photo on file in accordance with UMRA KYC regulations.
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  Required
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="relative">
+                  {borrowerPhotoUrl ? (
+                    <img
+                      src={borrowerPhotoUrl}
+                      alt="Applicant profile"
+                      className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-500 shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-slate-200 border-2 border-dashed border-red-300 flex flex-col items-center justify-center text-red-500 text-[10px] font-bold text-center p-1">
+                      <Camera className="w-6 h-6 mb-1 opacity-70" />
+                      No Photo!
+                    </div>
+                  )}
+                  {borrowerPhotoUrl && (
+                    <span className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-1 rounded-full shadow-xs">
+                      <CheckCircle2 className="w-3 h-3" />
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-2 w-full">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Profile Photo URL or Biometric Preset:
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={borrowerPhotoUrl}
+                      onChange={(e) => {
+                        setBorrowerPhotoUrl(e.target.value);
+                        setApplicationError(null);
+                      }}
+                      className="w-full px-3 py-1.5 border rounded-lg border-slate-300 font-mono-num text-[11px] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-slate-400 font-semibold">Select Portrait Preset:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBorrowerPhotoUrl('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80');
+                        setApplicationError(null);
+                      }}
+                      className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700 cursor-pointer"
+                    >
+                      Preset 1 (Musa)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBorrowerPhotoUrl('https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80');
+                        setApplicationError(null);
+                      }}
+                      className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700 cursor-pointer"
+                    >
+                      Preset 2 (Betty)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBorrowerPhotoUrl('https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80');
+                        setApplicationError(null);
+                      }}
+                      className="px-2 py-1 rounded bg-white hover:bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700 cursor-pointer"
+                    >
+                      Preset 3 (Haruna)
+                    </button>
+                    {borrowerPhotoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setBorrowerPhotoUrl('')}
+                        className="px-2 py-1 rounded text-red-600 hover:bg-red-50 text-[10px] font-bold cursor-pointer ml-auto"
+                      >
+                        Remove Photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* 2. Target Loan Product */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Choose Loan Product *</label>
-              <select
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              >
-                {companyProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.annualRatePercent}% p.a. • Max {formatUGX(p.maxPrincipal)})
-                  </option>
-                ))}
-              </select>
+            {/* SECTION B: TARGET COMPANY & LOAN PRODUCT */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Select Lending Company *</label>
+                <select
+                  value={selectedTenantId}
+                  onChange={(e) => {
+                    setSelectedTenantId(e.target.value);
+                    const firstProd = loanProducts.find((p) => p.tenantId === e.target.value);
+                    if (firstProd) setSelectedProductId(firstProd.id);
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                >
+                  {tenants.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.displayName} ({t.legalName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Choose Loan Product *</label>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                >
+                  {companyProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.annualRatePercent}% p.a. • Max {formatUGX(p.maxPrincipal)})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* 3. Amount & Term */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* SECTION C: AMOUNT, TERM, FREQUENCY */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Requested Amount (UGX) *</label>
                 <input
                   type="number"
                   required
-                  step={500000}
+                  step={100000}
                   value={requestedAmount}
                   onChange={(e) => setRequestedAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono-num font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -436,66 +658,270 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
                   onChange={(e) => setRequestedTermMonths(Number(e.target.value))}
                   className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-mono-num focus:outline-none"
                 >
-                  <option value={1}>1 Month (Float Advance)</option>
+                  <option value={1}>1 Month (Emergency / Float)</option>
                   <option value={3}>3 Months</option>
                   <option value={6}>6 Months</option>
                   <option value={12}>12 Months</option>
+                  <option value={18}>18 Months</option>
                   <option value={24}>24 Months</option>
+                  <option value={36}>36 Months (Secured)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Repayment Frequency *</label>
+                <select
+                  value={repaymentFreq}
+                  onChange={(e) => setRepaymentFreq(e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-medium focus:outline-none"
+                >
+                  <option value="monthly">Monthly Installments</option>
+                  <option value="weekly">Weekly Installments (Market Traders)</option>
                 </select>
               </div>
             </div>
 
-            {/* Repayment Frequency */}
+            {/* Purpose */}
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Repayment Schedule Preference</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setRepaymentFreq('monthly')}
-                  className={`py-2 px-3 rounded-lg border font-bold cursor-pointer text-center ${
-                    repaymentFreq === 'monthly'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  Monthly Installments
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRepaymentFreq('weekly')}
-                  className={`py-2 px-3 rounded-lg border font-bold cursor-pointer text-center ${
-                    repaymentFreq === 'weekly'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  Weekly Installments (Market Traders)
-                </button>
-              </div>
-            </div>
-
-            {/* 4. Purpose */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Loan Purpose &amp; Business Use *</label>
+              <label className="block font-semibold text-slate-700 mb-1">Loan Purpose &amp; Enterprise Utilization *</label>
               <textarea
                 required
-                rows={3}
-                placeholder="Describe how the funds will be deployed in your trade or enterprise..."
+                rows={2}
+                placeholder="State how the loan funds will be invested in your enterprise or commercial activity..."
                 value={loanPurpose}
                 onChange={(e) => setLoanPurpose(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
-            {/* 5. Documents Note */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 space-y-1">
-              <strong className="text-slate-800 block">Automatic Document Attachment:</strong>
-              <span>
-                Your verified National ID (NIN: {currentBorrower.ninMasked}) and central credit performance report will be bundled with this application.
-              </span>
+            {/* SECTION D: DUAL GUARANTORS (GUARANTOR 1 & GUARANTOR 2) */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block text-xs flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    Mandatory Dual Guarantors Undertaking (UMRA Tier 4)
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Two independent guarantors are required for credit underwriting and statutory co-signing.
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                  Dual Co-Signers
+                </span>
+              </div>
+
+              {/* Guarantor 1 Fields */}
+              <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                <span className="font-bold text-slate-800 text-[11px] block text-emerald-700">
+                  Primary Guarantor (Guarantor 1)
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Dennis Kakooza"
+                      value={guarantor1Name}
+                      onChange={(e) => setGuarantor1Name(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Phone Contact *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="+256 7..."
+                      value={guarantor1Phone}
+                      onChange={(e) => setGuarantor1Phone(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">National ID (NIN) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="CM80..."
+                      value={guarantor1Nin}
+                      onChange={(e) => setGuarantor1Nin(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs font-mono-num"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Relationship *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Fellow Trader"
+                      value={guarantor1Relationship}
+                      onChange={(e) => setGuarantor1Relationship(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Guarantor 2 Fields (Requested explicitly by user) */}
+              <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-[11px] block text-indigo-700">
+                    Secondary Guarantor (Guarantor 2) *
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-500">Co-obligor guarantee</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Florence Namubiru"
+                      value={guarantor2Name}
+                      onChange={(e) => setGuarantor2Name(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                      data-testid="guarantor2-name-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Phone Contact *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="+256 7..."
+                      value={guarantor2Phone}
+                      onChange={(e) => setGuarantor2Phone(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs font-mono-num"
+                      data-testid="guarantor2-phone-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">National ID (NIN) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="CF87..."
+                      value={guarantor2Nin}
+                      onChange={(e) => setGuarantor2Nin(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs font-mono-num"
+                      data-testid="guarantor2-nin-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Relationship *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Spouse / Sibling"
+                      value={guarantor2Relationship}
+                      onChange={(e) => setGuarantor2Relationship(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                      data-testid="guarantor2-rel-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">Occupation / Job *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Nurse / Teacher"
+                      value={guarantor2Occupation}
+                      onChange={(e) => setGuarantor2Occupation(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                      data-testid="guarantor2-occ-input"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            {/* SECTION E: UPLOAD OTHER LOAN SUPPORT DOCUMENTS */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block text-xs flex items-center gap-1.5">
+                    <Paperclip className="w-4 h-4 text-emerald-600" />
+                    Upload Loan Supporting Documents ({supportingDocs.length} Attached)
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Attach LC1 residence letter, financial / MoMo statements, trading licenses, or collateral asset deeds.
+                  </span>
+                </div>
+              </div>
+
+              {/* Upload Input Row */}
+              <div className="p-3 bg-white rounded-lg border border-slate-200 flex flex-col sm:flex-row gap-2 items-end">
+                <div className="flex-1 w-full">
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+                    Document Title / File Description:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. KCCA Trading License 2026 or Land Title Deed"
+                    value={newDocTitle}
+                    onChange={(e) => setNewDocTitle(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs"
+                  />
+                </div>
+                <div className="w-full sm:w-56">
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+                    Document Category:
+                  </label>
+                  <select
+                    value={newDocCategory}
+                    onChange={(e) => setNewDocCategory(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border rounded border-slate-300 text-xs bg-white"
+                  >
+                    <option value="Trading License / Business Permit">Trading License &amp; Business Permit</option>
+                    <option value="Proof of Residence / LC1 Letter">Proof of Residence (LC1 Letter)</option>
+                    <option value="Financial Statement / MoMo">Financial &amp; MoMo Statement</option>
+                    <option value="Collateral Asset Deed">Collateral Asset Deed / Logbook</option>
+                    <option value="Tenancy Agreement">Tenancy Agreement</option>
+                    <option value="Other Supporting Document">Other Supporting Document</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddSupportingDocument}
+                  className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  + Attach Doc
+                </button>
+              </div>
+
+              {/* Attached Documents List */}
+              <div className="space-y-1.5">
+                {supportingDocs.map((docItem) => (
+                  <div
+                    key={docItem.id}
+                    className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <strong className="text-slate-800 text-[11px] block">{docItem.title}</strong>
+                        <span className="text-[10px] text-slate-500">
+                          {docItem.category} • {docItem.fileSize ? `${Math.round(docItem.fileSize / 1024)} KB` : 'Verified on File'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSupportingDocument(docItem.id)}
+                      className="text-slate-400 hover:text-red-600 p-1 cursor-pointer transition-colors"
+                      title="Remove document"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
               <button
                 type="button"
                 onClick={() => setActiveTab('directory')}
@@ -505,7 +931,8 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs cursor-pointer flex items-center gap-2 text-xs"
+                data-testid="submit-borrower-app-btn"
               >
                 <Send className="w-4 h-4" />
                 Submit Application to Lender
@@ -518,6 +945,39 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
       {/* TAB 3: MY APPLICATIONS & ACTIVE LOANS */}
       {activeTab === 'my_loans' && (
         <div className="space-y-6">
+          {/* Submission Success Banner with 1-Click PDF Export */}
+          {lastSubmittedApp && (
+            <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950 animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                <div>
+                  <strong className="text-sm block text-emerald-900">
+                    Application #{lastSubmittedApp.applicationNo} Filed Successfully!
+                  </strong>
+                  <span className="text-emerald-700">
+                    Dispatched to {lastSubmittedApp.tenantName} with verified photo, Guarantor 1 ({lastSubmittedApp.guarantor1Name}), and Guarantor 2 ({lastSubmittedApp.guarantor2Name}).
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const targetTenant = tenants.find((t) => t.id === lastSubmittedApp.tenantId) || tenants[0];
+                  const appProd = loanProducts.find((p) => p.id === lastSubmittedApp.productId);
+                  exportLoanApplicationPDF({
+                    application: lastSubmittedApp,
+                    tenant: targetTenant,
+                    product: appProd,
+                    borrowerAccount: currentBorrower,
+                  });
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                Download PDF Application Form
+              </button>
+            </div>
+          )}
+
           {/* Applications list */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
@@ -536,21 +996,31 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
                     key={app.id}
                     className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs"
                   >
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center gap-2">
                         <strong className="text-slate-900 text-sm">{app.productName}</strong>
-                        <span className="font-mono-num text-[10px] px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                        <span className="font-mono-num text-[10px] px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-bold">
                           {app.applicationNo}
                         </span>
+                        {app.borrowerPhotoUrl && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <Camera className="w-3 h-3" /> Photo Attached
+                          </span>
+                        )}
                       </div>
                       <p className="text-slate-600">
                         Target Lender: <strong className="text-slate-900">{app.tenantName}</strong> • Amount:{' '}
-                        <strong className="text-emerald-700 font-mono-num">{formatUGX(app.requestedAmountUGX)}</strong> ({app.requestedTermMonths} months)
+                        <strong className="text-emerald-700 font-mono-num">{formatUGX(app.requestedAmountUGX)}</strong> ({app.requestedTermMonths} months • {app.repaymentFrequency})
                       </p>
+                      {(app.guarantor1Name || app.guarantor2Name) && (
+                        <p className="text-[11px] text-slate-500">
+                          Guarantors: <strong>{app.guarantor1Name || 'Guarantor 1'}</strong> &amp; <strong>{app.guarantor2Name || 'Guarantor 2'}</strong> • {app.supportingDocuments?.length || 2} documents
+                        </p>
+                      )}
                       <p className="text-[11px] text-slate-500 italic">"{app.purpose}"</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <div>
                         {app.status === 'under_review' && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
@@ -573,6 +1043,26 @@ export const BorrowerPortalView: React.FC<BorrowerPortalViewProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {/* PDF Export Button (Requested Feature) */}
+                      <button
+                        onClick={() => {
+                          const targetTenant = tenants.find((t) => t.id === app.tenantId) || tenants[0];
+                          const appProd = loanProducts.find((p) => p.id === app.productId);
+                          exportLoanApplicationPDF({
+                            application: app,
+                            tenant: targetTenant,
+                            product: appProd,
+                            borrowerAccount: currentBorrower,
+                          });
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs cursor-pointer shadow-xs transition-colors"
+                        title="Export professional PDF application dossier"
+                        data-testid={`export-pdf-app-${app.id}`}
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Export PDF Form</span>
+                      </button>
                     </div>
                   </div>
                 ))}

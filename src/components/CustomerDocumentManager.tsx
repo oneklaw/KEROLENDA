@@ -126,6 +126,13 @@ const CATEGORY_CONFIG: Record<
     description: 'Electronically executed loan agreement or biometric signature card',
     frameType: 'document',
   },
+  proof_of_income: {
+    label: 'Proof of Income & Cash Flow',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    icon: '💵',
+    description: 'Bank account statement, salary payslip, or mobile money statement',
+    frameType: 'document',
+  },
   other: {
     label: 'Other Attachment',
     badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',

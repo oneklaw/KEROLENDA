@@ -45,6 +45,8 @@ interface HeaderProps {
   onOpenCreditBureauModal?: () => void;
   onOpenNotificationsModal?: () => void;
   onLogout?: () => void;
+  inactivityCountdown?: string;
+  onSimulateInactivityWarning?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -68,6 +70,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCreditBureauModal,
   onOpenNotificationsModal,
   onLogout,
+  inactivityCountdown,
+  onSimulateInactivityWarning,
 }) => {
   const roleDisplayNames: Record<UserRole, { name: string; color: string }> = {
     PLATFORM_SUPER_ADMIN: { name: 'Super Admin', color: 'bg-purple-100 text-purple-800 border-purple-200' },
@@ -207,6 +211,28 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <LogOut className="w-3.5 h-3.5 text-rose-400" />
               <span>Sign Out</span>
+            </button>
+          )}
+
+          {/* Session Auto-Lock Security Indicator */}
+          <div
+            className="hidden sm:inline-flex items-center gap-1.5 bg-slate-800/90 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 text-[11px] font-mono shadow-xs"
+            title="Auto-logout timer: locks session after 15 minutes of inactivity for UMRA compliance"
+          >
+            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-slate-400 font-sans hidden md:inline">Auto-Lock:</span>
+            <span className="font-bold text-emerald-300">{inactivityCountdown || '15:00'}</span>
+          </div>
+
+          {/* QA Test Simulation */}
+          {onSimulateInactivityWarning && (
+            <button
+              onClick={onSimulateInactivityWarning}
+              className="hidden lg:inline-flex items-center gap-1 bg-amber-950/70 hover:bg-amber-900 text-amber-300 px-2 py-1 rounded-lg border border-amber-800 text-[10px] font-bold cursor-pointer"
+              title="Simulate 13-minute inactivity warning (QA Test)"
+            >
+              <Clock className="w-3 h-3 text-amber-400" />
+              <span>Test Auto-Lock</span>
             </button>
           )}
         </div>

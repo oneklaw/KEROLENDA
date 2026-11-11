@@ -37,6 +37,7 @@ interface CompanyUsersViewProps {
   users: AppUser[];
   invitations: CompanyInvitation[];
   onInviteUser: (invitation: Omit<CompanyInvitation, 'id' | 'invitedAt' | 'expiresAt' | 'status'>) => void;
+  onAddUser?: (user: AppUser) => void;
   onUpdateUserRole: (userId: string, newRole: UserRole) => void;
   onToggleUserStatus: (userId: string, currentStatus: 'active' | 'disabled' | 'pending_activation') => void;
   onRevokeInvitation: (invitationId: string) => void;
@@ -61,6 +62,7 @@ export const CompanyUsersView: React.FC<CompanyUsersViewProps> = ({
   users,
   invitations,
   onInviteUser,
+  onAddUser,
   onUpdateUserRole,
   onToggleUserStatus,
   onRevokeInvitation,
@@ -68,7 +70,20 @@ export const CompanyUsersView: React.FC<CompanyUsersViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<AppUser | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  // Direct User Creation Form State
+  const [addName, setAddName] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addUsername, setAddUsername] = useState('');
+  const [addPhone, setAddPhone] = useState('+256 ');
+  const [addRole, setAddRole] = useState<UserRole>('LOAN_OFFICER');
+  const [addBranchId, setAddBranchId] = useState(branches[0]?.id || 'branch-kla-main');
+  const [addApprovalLimit, setAddApprovalLimit] = useState(5_000_000);
+  const [addMfaEnabled, setAddMfaEnabled] = useState(true);
+  const [addStatus, setAddStatus] = useState<'active' | 'pending_activation'>('active');
 
   // Invitation Form
   const [inviteEmail, setInviteEmail] = useState('');
@@ -112,6 +127,44 @@ export const CompanyUsersView: React.FC<CompanyUsersViewProps> = ({
     setInviteEmail('');
     setInvitePhone('+256 ');
     setShowInviteModal(false);
+    setActionFeedback(`Invitation sent to ${inviteEmail.trim()}`);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const handleCreateUserDirectly = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addName.trim() || !addEmail.trim()) return;
+
+    const autoUsername = addUsername.trim() || addName.trim().toLowerCase().replace(/\s+/g, '.');
+    const newUser: AppUser = {
+      id: `user-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      tenantId: tenant.id,
+      branchId: addBranchId,
+      name: addName.trim(),
+      email: addEmail.trim().toLowerCase(),
+      username: autoUsername,
+      phone: addPhone.trim().length > 5 ? addPhone.trim() : undefined,
+      role: addRole,
+      approvalLimitUGX: Number(addApprovalLimit) || 0,
+      mfaEnabled: addMfaEnabled,
+      status: addStatus,
+    };
+
+    if (onAddUser) {
+      onAddUser(newUser);
+    }
+
+    setActionFeedback(`Successfully added ${newUser.name} (${newUser.role}) to ${tenant.displayName}!`);
+    setTimeout(() => setActionFeedback(null), 4500);
+
+    // Reset Form
+    setAddName('');
+    setAddEmail('');
+    setAddUsername('');
+    setAddPhone('+256 ');
+    setAddRole('LOAN_OFFICER');
+    setAddApprovalLimit(5_000_000);
+    setShowAddUserModal(false);
   };
 
   return (
@@ -151,14 +204,33 @@ export const CompanyUsersView: React.FC<CompanyUsersViewProps> = ({
           </div>
 
           <button
-            onClick={() => setShowInviteModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            onClick={() => setShowAddUserModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            data-testid="add-user-directly-btn"
           >
-            <UserPlus className="w-4 h-4" />
+            <UserPlus className="w-4 h-4 text-emerald-400" />
+            + Add User Directly
+          </button>
+
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+          >
+            <Mail className="w-4 h-4" />
             Invite Staff Member
           </button>
         </div>
       </div>
+
+      {/* Action feedback notification banner */}
+      {actionFeedback && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between text-xs text-emerald-900 font-medium animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>{actionFeedback}</span>
+          </div>
+        </div>
+      )}
 
       {/* Staff Directory Table */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
@@ -507,6 +579,170 @@ export const CompanyUsersView: React.FC<CompanyUsersViewProps> = ({
                 Close Inspector
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: DIRECT USER CREATION (FOR COMPANY ADMINS) */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-emerald-600" />
+                  Add User Directly to {tenant.displayName}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Instant staff provisioning without requiring an email invitation code.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddUserModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUserDirectly} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Full Legal Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Christine Namugga"
+                  value={addName}
+                  onChange={(e) => {
+                    setAddName(e.target.value);
+                    if (!addUsername) {
+                      setAddUsername(e.target.value.toLowerCase().replace(/\s+/g, '.'));
+                    }
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Work Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. c.namugga@mfi.ug"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Username / Login ID *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. cnamugga"
+                    value={addUsername}
+                    onChange={(e) => setAddUsername(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono-num"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Mobile Phone (+256)</label>
+                  <input
+                    type="text"
+                    placeholder="+256 7..."
+                    value={addPhone}
+                    onChange={(e) => setAddPhone(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono-num"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Assign Branch Location *</label>
+                  <select
+                    value={addBranchId}
+                    onChange={(e) => setAddBranchId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white focus:outline-none"
+                  >
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Assigned Institutional Role *</label>
+                  <select
+                    value={addRole}
+                    onChange={(e) => setAddRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 bg-white font-semibold focus:outline-none"
+                  >
+                    {ROLES_LIST.map((r) => (
+                      <option key={r.role} value={r.role}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Credit / Expense Limit (UGX) *</label>
+                  <input
+                    type="number"
+                    step={1000000}
+                    value={addApprovalLimit}
+                    onChange={(e) => setAddApprovalLimit(Number(e.target.value))}
+                    className="w-full px-3 py-2 border rounded-lg border-slate-300 font-mono-num font-bold focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-800">Mandatory Multi-Factor Authentication</span>
+                  <input
+                    type="checkbox"
+                    checked={addMfaEnabled}
+                    onChange={(e) => setAddMfaEnabled(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-slate-600 text-[11px]">
+                  <span>Initial Status:</span>
+                  <select
+                    value={addStatus}
+                    onChange={(e) => setAddStatus(e.target.value as any)}
+                    className="px-2 py-1 border rounded bg-white text-xs"
+                  >
+                    <option value="active">Active Immediately</option>
+                    <option value="pending_activation">Pending First-Time Activation</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(false)}
+                  className="px-4 py-2 border rounded-lg text-slate-600 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                  data-testid="submit-add-user-btn"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Save &amp; Provision User
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -29,6 +29,10 @@ import {
   CreditDispute,
   SystemNotification,
   UserRole,
+  LoanApplication,
+  CustomerGroup,
+  MobileMoneyTransaction,
+  ProviderFloatSummary,
 } from './types';
 import {
   SEED_TENANTS,
@@ -49,6 +53,10 @@ import {
   SEED_FIXED_ASSETS,
   SEED_PERSONAL_BUDGET,
   SEED_AUDIT_LOGS,
+  SEED_APPLICATIONS,
+  SEED_CUSTOMER_GROUPS,
+  SEED_MOBILE_MONEY_TRANSACTIONS,
+  SEED_PROVIDER_FLOATS,
 } from './data/seedData';
 import {
   ADDITIONAL_TENANTS,
@@ -86,6 +94,15 @@ import { PlatformAdminView } from './components/PlatformAdminView';
 import { CompanyUsersView } from './components/CompanyUsersView';
 import { CreditBureauModal } from './components/CreditBureauModal';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
+import { ReportGenerator, ReportType } from './components/ReportGenerator';
+import { InactivityWarningModal } from './components/InactivityWarningModal';
+import {
+  calculateInactivityState,
+  shouldRecordActivity,
+  DEFAULT_INACTIVITY_TIMEOUT_MS,
+  DEFAULT_WARNING_THRESHOLD_MS,
+  InactivityState,
+} from './utils/inactivityTimer';
 
 import {
   LayoutDashboard,
@@ -98,12 +115,21 @@ import {
   Users,
   ShieldCheck,
   UserCheck,
+  Printer,
+  PlusCircle,
+  Menu,
+  X,
+  Building2,
+  Lock,
 } from 'lucide-react';
 
 export default function App() {
   // Operating Environment: Platform Admin | Company Lending Workspace | Borrower Self-Service Portal
   const [operatingEnvironment, setOperatingEnvironment] =
     useState<OperatingEnvironment>('lending_workspace');
+
+  // Mobile sidebar toggle for Company Dashboard
+  const [mobileToolsOpen, setMobileToolsOpen] = useState<boolean>(false);
 
   // SaaS Multi-Tenant & RBAC State
   const [tenants, setTenants] = useState<Tenant[]>([...SEED_TENANTS, ...ADDITIONAL_TENANTS]);
@@ -117,6 +143,14 @@ export default function App() {
 
   // Mandatory Authentication Gate: User must first login before accessing the system!
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // Inactivity Auto-Logout & Session Lockout State (15 min limit with warning modal)
+  const [lastActivityTime, setLastActivityTime] = useState<number>(Date.now());
+  const [inactivityState, setInactivityState] = useState<InactivityState>(() =>
+    calculateInactivityState(Date.now(), Date.now())
+  );
+  const [showInactivityWarning, setShowInactivityWarning] = useState<boolean>(false);
+  const [sessionLockoutNotice, setSessionLockoutNotice] = useState<string | null>(null);
 
   // Central Borrower Portal Identities & Multi-Company Applications
   const [borrowers, setBorrowers] = useState<BorrowerAccount[]>(SEED_BORROWERS);
@@ -145,7 +179,15 @@ export default function App() {
     | 'customers'
     | 'users'
     | 'audit'
+    | 'reports'
   >('dashboard');
+
+  // Report Generator Quick Parameters (Pre-selected when navigating from other views)
+  const [reportParams, setReportParams] = useState<{
+    type?: ReportType;
+    loanId?: string;
+    customerId?: string;
+  }>({});
 
   // Core Data Collections
   const [customers, setCustomers] = useState<Customer[]>(SEED_CUSTOMERS);
@@ -164,6 +206,10 @@ export default function App() {
   const [personalBudget, setPersonalBudget] = useState<PersonalBudgetItem[]>(SEED_PERSONAL_BUDGET);
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(SEED_AUDIT_LOGS);
   const [customerDocuments, setCustomerDocuments] = useState<CustomerDocument[]>(SEED_CUSTOMER_DOCUMENTS);
+  const [applications, setApplications] = useState<LoanApplication[]>(SEED_APPLICATIONS);
+  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(SEED_CUSTOMER_GROUPS);
+  const [mobileMoneyTransactions, setMobileMoneyTransactions] = useState<MobileMoneyTransaction[]>(SEED_MOBILE_MONEY_TRANSACTIONS);
+  const [providerFloats, setProviderFloats] = useState<ProviderFloatSummary[]>(SEED_PROVIDER_FLOATS);
 
   // Automated 3-Day Repayment Reminder Scheduler State (SMS & Email)
   const [schedulerSimulatedDate, setSchedulerSimulatedDate] = useState<string>('2026-11-03');
@@ -257,6 +303,115 @@ export default function App() {
       timestamp: new Date().toISOString(),
     };
     setAuditLogs((prev) => [newEvent, ...prev]);
+  };
+
+  // --- Inactivity Auto-Logout & Session Lockout Mechanism ---
+  // Tracks user activity: mouse movements, clicks, keystrokes, scroll, touch
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastRecorded = Date.now();
+
+    const recordUserActivity = () => {
+      // While the security warning modal is actively prompting the user,
+      // require explicit interaction ("Stay Logged In" button) rather than ambient mouse jitter
+      if (showInactivityWarning) return;
+
+      const now = Date.now();
+      if (shouldRecordActivity(lastRecorded, now)) {
+        lastRecorded = now;
+        setLastActivityTime(now);
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((evt) => window.addEventListener(evt, recordUserActivity, { passive: true }));
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, recordUserActivity));
+    };
+  }, [isAuthenticated, showInactivityWarning]);
+
+  // 1-second interval ticker to evaluate inactivity state against 15-minute and 13-minute thresholds
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const state = calculateInactivityState(lastActivityTime, now);
+      setInactivityState(state);
+
+      if (state.isLocked) {
+        setIsAuthenticated(false);
+        setShowInactivityWarning(false);
+        setSessionLockoutNotice(
+          'Your session has been automatically locked due to 15 minutes of inactivity in compliance with UMRA Tier 4 regulations and the Uganda Data Protection and Privacy Act 2019. Please enter your credentials to unlock and continue.'
+        );
+        setShowAuthModal(true);
+        logAudit(
+          'SECURITY_INACTIVITY_LOCK',
+          'CUSTOMER',
+          currentUser.id,
+          `Session automatically locked due to 15 minutes of inactivity for ${currentUser.name} (${currentUser.role}).`
+        );
+      } else if (state.isWarning && !showInactivityWarning) {
+        setShowInactivityWarning(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, lastActivityTime, currentUser, showInactivityWarning]);
+
+  // Handler: Extend session from warning modal
+  const handleStayLoggedIn = () => {
+    const now = Date.now();
+    setLastActivityTime(now);
+    setShowInactivityWarning(false);
+    setInactivityState(calculateInactivityState(now, now));
+    logAudit(
+      'SESSION_EXTENDED',
+      'CUSTOMER',
+      currentUser.id,
+      `User ${currentUser.name} confirmed activity and extended the active workspace session.`
+    );
+  };
+
+  // Handler: Lock session immediately from warning modal
+  const handleLockSessionNow = () => {
+    setIsAuthenticated(false);
+    setShowInactivityWarning(false);
+    setSessionLockoutNotice('Session manually locked by user. Please re-authenticate to continue.');
+    setShowAuthModal(true);
+    logAudit(
+      'MANUAL_SESSION_LOCK',
+      'CUSTOMER',
+      currentUser.id,
+      `User ${currentUser.name} chose to lock session immediately at warning prompt.`
+    );
+  };
+
+  // Handler: Simulate 13-minute inactivity warning (for testing without waiting 13 full minutes)
+  const handleSimulateInactivityWarning = () => {
+    const simulatedPastTime = Date.now() - (DEFAULT_WARNING_THRESHOLD_MS + 30 * 1000);
+    setLastActivityTime(simulatedPastTime);
+    setInactivityState(calculateInactivityState(simulatedPastTime, Date.now()));
+    setShowInactivityWarning(true);
+  };
+
+  // Handler: Force immediate lockout simulation
+  const handleForceImmediateLock = () => {
+    setIsAuthenticated(false);
+    setShowInactivityWarning(false);
+    setSessionLockoutNotice(
+      'Your session has been locked due to inactivity simulation. Please re-authenticate.'
+    );
+    setShowAuthModal(true);
+    logAudit(
+      'SECURITY_INACTIVITY_LOCK',
+      'CUSTOMER',
+      currentUser.id,
+      `Session locked via QA inactivity test for ${currentUser.name}.`
+    );
   };
 
   // 1. Post Repayment (Cashier / Teller)
@@ -655,6 +810,7 @@ export default function App() {
     productId: string;
     requestedAmount: number;
     requestedTermMonths: number;
+    interestRateAnnual?: number;
     purpose: string;
     collateralDescription: string;
     collateralEstimatedValue: number;
@@ -662,10 +818,11 @@ export default function App() {
     const product = loanProducts.find((p) => p.id === applicationData.productId) || loanProducts[0];
     const customer = customers.find((c) => c.id === applicationData.customerId);
     const loanNo = `LN-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const appliedRate = applicationData.interestRateAnnual || product.annualRatePercent;
 
     const scheduleResult = calculateSchedule(
       applicationData.requestedAmount,
-      product.annualRatePercent,
+      appliedRate,
       applicationData.requestedTermMonths,
       'monthly',
       product.interestMethod,
@@ -686,7 +843,7 @@ export default function App() {
       productId: applicationData.productId,
       currency: 'UGX',
       principalApproved: applicationData.requestedAmount,
-      interestRateAnnual: product.annualRatePercent,
+      interestRateAnnual: appliedRate,
       interestMethod: product.interestMethod,
       termMonths: applicationData.requestedTermMonths,
       disbursedAmount: applicationData.requestedAmount,
@@ -715,6 +872,41 @@ export default function App() {
       })),
     };
 
+    const newApp: LoanApplication = {
+      id: `app-${Date.now()}`,
+      tenantId: currentTenant.id,
+      branchId: currentBranch.id,
+      applicationNo: `APP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      customerId: applicationData.customerId,
+      productId: applicationData.productId,
+      requestedAmount: applicationData.requestedAmount,
+      requestedTermMonths: applicationData.requestedTermMonths,
+      purpose: applicationData.purpose,
+      collateralDescription: applicationData.collateralDescription,
+      collateralEstimatedValue: applicationData.collateralEstimatedValue,
+      guarantorCustomerId: (applicationData as any).guarantorCustomerId,
+      guarantor2Name: (applicationData as any).guarantor2Name,
+      guarantor2Phone: (applicationData as any).guarantor2Phone,
+      guarantor2Nin: (applicationData as any).guarantor2Nin,
+      guarantor2Relationship: (applicationData as any).guarantor2Relationship,
+      guarantor2Occupation: (applicationData as any).guarantor2Occupation,
+      applicantPhotoUrl: (applicationData as any).applicantPhotoUrl,
+      routingTier: (applicationData as any).routingTier || 'tier1_officer',
+      affordabilityCheck: (applicationData as any).affordabilityCheck,
+      status: 'submitted',
+      submittedByUserId: currentUser.id,
+      submittedAt: new Date().toISOString(),
+      stageHistory: [
+        {
+          stage: 'submitted',
+          transitionedAt: new Date().toISOString(),
+          performedByUserId: currentUser.id,
+          notes: 'Captured via Loan Origination with dual guarantors and photo.',
+        },
+      ],
+    };
+
+    setApplications((prev) => [newApp, ...prev]);
     setLoans((prev) => [newLoan, ...prev]);
 
     // Post double entry journal for disbursement
@@ -1080,6 +1272,16 @@ export default function App() {
     setNotifications((prev) => [invNotif, ...prev]);
   };
 
+  const handleAddUser = (newUser: AppUser) => {
+    setUsers((prev) => [newUser, ...prev]);
+    logAudit(
+      'CREATE_USER',
+      'CUSTOMER',
+      newUser.id,
+      `Company admin created and provisioned new staff member ${newUser.name} (${newUser.email}) with role ${newUser.role}.`
+    );
+  };
+
   const handleUpdateUserRole = (userId: string, newRole: UserRole) => {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
     logAudit('UPDATE_USER_ROLE', 'CUSTOMER', userId, `Updated user ${userId} role to ${newRole}.`);
@@ -1338,7 +1540,41 @@ export default function App() {
     setActiveTab('teller');
   };
 
-  // Navigation Items for Company Lending Workspace
+  // Navigation Items & Categorized Sections for Company Lending Workspace Left Sidebar
+  const navToolSections = [
+    {
+      title: 'Core Operations',
+      items: [
+        { id: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'loans' as const, label: 'Loans & Servicing', icon: CreditCard },
+        { id: 'teller' as const, label: 'Cashier Terminal', icon: Receipt },
+        { id: 'collections' as const, label: 'Recovery & PAR 30', icon: AlertTriangle },
+      ],
+    },
+    {
+      title: 'Savings & Capital',
+      items: [
+        { id: 'savings' as const, label: 'Savings & Shares', icon: PiggyBank },
+      ],
+    },
+    {
+      title: 'Financial Ledger',
+      items: [
+        { id: 'expenses' as const, label: 'Expenses & Budget', icon: Wallet },
+        { id: 'accounting' as const, label: 'General Ledger', icon: BookOpen },
+      ],
+    },
+    {
+      title: 'Customer & Compliance',
+      items: [
+        { id: 'customers' as const, label: 'Customers & KYC', icon: Users, badge: 'Vault' },
+        { id: 'users' as const, label: 'Staff & RBAC', icon: UserCheck },
+        { id: 'audit' as const, label: 'Audit & UMRA', icon: ShieldCheck },
+        { id: 'reports' as const, label: 'Reports & Print', icon: Printer },
+      ],
+    },
+  ];
+
   const navTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'loans', label: 'Loans & Servicing', icon: CreditCard },
@@ -1350,6 +1586,7 @@ export default function App() {
     { id: 'customers', label: 'Customers & KYC', icon: Users },
     { id: 'users', label: 'Staff & RBAC', icon: UserCheck },
     { id: 'audit', label: 'Audit & UMRA', icon: ShieldCheck },
+    { id: 'reports', label: 'Reports & Print', icon: Printer },
   ] as const;
 
   // Mandatory Authentication Gate: User must first login before accessing the system!
@@ -1375,6 +1612,7 @@ export default function App() {
         <AuthModal
           isOpen={true}
           isMandatory={true}
+          lockoutNotice={sessionLockoutNotice}
           users={users}
           currentUser={currentUser}
           tenants={tenants}
@@ -1397,6 +1635,8 @@ export default function App() {
             } else {
               setOperatingEnvironment('lending_workspace');
             }
+            setLastActivityTime(Date.now());
+            setSessionLockoutNotice(null);
             setIsAuthenticated(true);
             setShowAuthModal(false);
             logAudit(
@@ -1454,41 +1694,16 @@ export default function App() {
         onOpenNotificationsModal={() => setShowNotificationsModal(true)}
         onLogout={() => {
           setIsAuthenticated(false);
+          setSessionLockoutNotice(null);
           logAudit('USER_LOGOUT', 'CUSTOMER', currentUser.id, 'User signed out and locked workspace session.');
         }}
+        inactivityCountdown={inactivityState.formattedCountdown}
+        onSimulateInactivityWarning={handleSimulateInactivityWarning}
       />
 
-      {/* Main Navigation Bar (Active for Company Lending Workspace) */}
-      {operatingEnvironment === 'lending_workspace' && (
-        <nav className="bg-white border-b border-slate-200 px-4 py-1 sticky top-[95px] sm:top-[98px] z-20 shadow-2xs no-print overflow-x-auto">
-          <div className="flex items-center gap-1 min-w-max">
-            {navTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-slate-900 text-white shadow-xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      )}
-
-      {/* Main Content View Container based on Operating Environment */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
-        {/* ENVIRONMENT 1: PLATFORM ADMINISTRATION */}
-        {operatingEnvironment === 'platform_admin' && (
+      {/* ENVIRONMENT 1: PLATFORM ADMINISTRATION */}
+      {operatingEnvironment === 'platform_admin' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
           <PlatformAdminView
             tenants={tenants}
             currentUser={currentUser}
@@ -1507,10 +1722,12 @@ export default function App() {
             }}
             onResolveDispute={handleResolveDispute}
           />
-        )}
+        </main>
+      )}
 
-        {/* ENVIRONMENT 2: BORROWER SELF-SERVICE PORTAL */}
-        {operatingEnvironment === 'borrower_portal' && (
+      {/* ENVIRONMENT 2: BORROWER SELF-SERVICE PORTAL */}
+      {operatingEnvironment === 'borrower_portal' && (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
           <BorrowerPortalView
             currentBorrower={currentBorrower}
             tenants={tenants}
@@ -1537,10 +1754,136 @@ export default function App() {
               }
             }}
           />
-        )}
+        </main>
+      )}
 
-        {/* ENVIRONMENT 3: COMPANY LENDING WORKSPACE (STRICT TENANT ISOLATION) */}
-        {operatingEnvironment === 'lending_workspace' && (() => {
+      {/* ENVIRONMENT 3: COMPANY LENDING WORKSPACE (TOOLS ON LEFT, DASHBOARD & DATA ON RIGHT) */}
+      {operatingEnvironment === 'lending_workspace' && (
+        <div className="flex-1 flex flex-col md:flex-row w-full min-h-[calc(100vh-95px)]">
+          {/* Mobile Tool Bar for Small Screens (< md) */}
+          <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between no-print sticky top-[95px] z-20 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tool:</span>
+              <span className="text-xs font-semibold text-white">
+                {navTabs.find((t) => t.id === activeTab)?.label || 'Dashboard'}
+              </span>
+            </div>
+            <button
+              onClick={() => setMobileToolsOpen(!mobileToolsOpen)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 transition"
+            >
+              {mobileToolsOpen ? <X className="w-3.5 h-3.5" /> : <Menu className="w-3.5 h-3.5" />}
+              <span>{mobileToolsOpen ? 'Close Tools' : 'Workspace Tools'}</span>
+            </button>
+          </div>
+
+          {/* Left Tools Navigation Sidebar */}
+          <aside
+            className={`
+              ${mobileToolsOpen ? 'block' : 'hidden'}
+              md:flex md:w-64 lg:w-72 bg-slate-900 border-r border-slate-800 flex-col shrink-0 no-print transition-all z-10 md:sticky md:top-[95px] md:h-[calc(100vh-95px)]
+            `}
+          >
+            {/* Institution / Branch Info Header */}
+            <div className="p-4 border-b border-slate-800 bg-slate-950/40">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm shrink-0">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-white truncate" title={currentTenant.displayName}>
+                    {currentTenant.displayName}
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                    <span className="truncate">{currentBranch.name}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Categorized Tools Navigation List */}
+            <div className="flex-1 py-3 px-2.5 space-y-4 overflow-y-auto">
+              {navToolSections.map((section) => (
+                <div key={section.title} className="space-y-1">
+                  <div className="px-2 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {section.title}
+                  </div>
+                  <div className="space-y-0.5">
+                    {section.items.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = activeTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => {
+                            setActiveTab(tab.id);
+                            setMobileToolsOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer text-left ${
+                            isActive
+                              ? 'bg-emerald-500/15 text-white font-semibold border-l-4 border-emerald-400 pl-2 shadow-xs'
+                              : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Icon
+                              className={`w-4 h-4 shrink-0 ${
+                                isActive ? 'text-emerald-400' : 'text-slate-500'
+                              }`}
+                            />
+                            <span className="truncate">{tab.label}</span>
+                          </div>
+                          {'badge' in tab && tab.badge && (
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${
+                                isActive
+                                  ? 'bg-emerald-500/30 text-emerald-300'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {tab.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Bottom Quick Actions Panel */}
+            <div className="p-3 border-t border-slate-800 bg-slate-950/50 space-y-2 shrink-0">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
+                Workspace Shortcuts
+              </div>
+              <button
+                onClick={() => {
+                  setShowLoanOrigination(true);
+                  setMobileToolsOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>+ Originate Loan</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('teller');
+                  setMobileToolsOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition cursor-pointer"
+              >
+                <Receipt className="w-3.5 h-3.5 text-sky-400" />
+                <span>Receive Repayment</span>
+              </button>
+            </div>
+          </aside>
+
+          {/* Right Main Container: Dashboard & Data Views */}
+          <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-slate-50 overflow-y-auto">
+            {(() => {
           const tenantLoans = loans.filter((l) => l.tenantId === currentTenant.id);
           const tenantCustomers = customers.filter((c) => c.tenantId === currentTenant.id);
           const tenantPayments = payments.filter((p) => p.tenantId === currentTenant.id);
@@ -1576,12 +1919,16 @@ export default function App() {
                   journals={tenantJournals}
                   savingsAccounts={tenantSavingsAccounts}
                   shareAccounts={tenantShareAccounts}
+                  loanProducts={tenantProducts}
                   onSelectLoan={(l) => {
                     setSelectedQuickLoan(l);
                     setActiveTab('loans');
                   }}
                   onQuickCollect={handleQuickCollect}
                   onNavigateTab={(tab) => setActiveTab(tab as any)}
+                  onOpenNewLoan={() => setShowLoanOrigination(true)}
+                  onOpenQuickPayment={() => setActiveTab('teller')}
+                  onOpenNewExpense={() => setActiveTab('expenses')}
                 />
               )}
 
@@ -1593,12 +1940,75 @@ export default function App() {
                   loans={tenantLoans}
                   customers={tenantCustomers}
                   products={tenantProducts}
+                  applications={applications.filter((a) => a.tenantId === currentTenant.id)}
                   notifications={notifications}
                   onOpenOrigination={() => setShowLoanOrigination(true)}
                   onQuickCollect={handleQuickCollect}
                   onRestructureLoan={handleRestructureLoan}
                   onTriggerReminderScan={runInstallmentReminderScan}
                   onOpenNotificationsModal={() => setShowNotificationsModal(true)}
+                  onOpenReportGenerator={(loanId) => {
+                    setReportParams({ type: 'loan_schedule', loanId });
+                    setActiveTab('reports');
+                  }}
+                  onUpdateApplicationStage={(appId, nextStage, notes) => {
+                    setApplications((prev) =>
+                      prev.map((a) => {
+                        if (a.id === appId) {
+                          return {
+                            ...a,
+                            status: nextStage,
+                            stageHistory: [
+                              ...(a.stageHistory || []),
+                              {
+                                stage: nextStage,
+                                transitionedAt: new Date().toISOString(),
+                                performedByUserId: currentUser.id,
+                                notes,
+                              },
+                            ],
+                          };
+                        }
+                        return a;
+                      })
+                    );
+                  }}
+                  onDisburseApplication={(app) => {
+                    const prod = loanProducts.find((p) => p.id === app.productId) || loanProducts[0];
+                    const newDisbursedLoan: Loan = {
+                      id: `loan-disb-${Date.now()}`,
+                      tenantId: currentTenant.id,
+                      branchId: currentBranch.id,
+                      loanNo: `LN-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+                      applicationId: app.id,
+                      customerId: app.customerId,
+                      productId: app.productId,
+                      currency: 'UGX',
+                      principalApproved: app.requestedAmount,
+                      interestRateAnnual: prod.annualRatePercent,
+                      interestMethod: prod.interestMethod,
+                      termMonths: app.requestedTermMonths,
+                      disbursedAmount: app.requestedAmount,
+                      disbursedAt: new Date().toISOString(),
+                      disbursementChannel: 'MTN Mobile Money',
+                      disbursementRef: `MTN-DISB-${Date.now().toString().slice(-6)}`,
+                      maturityDate: new Date(Date.now() + app.requestedTermMonths * 30 * 86400000).toISOString().split('T')[0],
+                      totalInterestExpected: Math.round(app.requestedAmount * (prod.annualRatePercent / 100) * (app.requestedTermMonths / 12)),
+                      totalFeesCharged: Math.round(app.requestedAmount * (prod.processingFeePercent / 100)),
+                      totalPaidPrincipal: 0,
+                      totalPaidInterest: 0,
+                      totalPaidFees: 0,
+                      totalPaidPenalties: 0,
+                      principalOutstanding: app.requestedAmount,
+                      interestAccruedOutstanding: 0,
+                      feesOutstanding: 0,
+                      penaltiesOutstanding: 0,
+                      daysPastDue: 0,
+                      status: 'active',
+                      schedule: [],
+                    };
+                    setLoans((prev) => [newDisbursedLoan, ...prev]);
+                  }}
                 />
               )}
 
@@ -1610,10 +2020,13 @@ export default function App() {
                   loans={tenantLoans}
                   customers={tenantCustomers}
                   payments={tenantPayments}
+                  transactions={mobileMoneyTransactions.filter((t) => t.tenantId === currentTenant.id)}
+                  providerFloats={providerFloats}
                   onPostPayment={handlePostPayment}
                   onReversePayment={handleReversePayment}
                   onViewReceipt={(r) => setActiveReceiptModal(r)}
                   initialSelectedLoan={selectedQuickLoan}
+                  onRecordMobileMoneyTx={(tx) => setMobileMoneyTransactions((prev) => [tx, ...prev])}
                 />
               )}
 
@@ -1706,11 +2119,21 @@ export default function App() {
                   currentUser={currentUser}
                   customers={tenantCustomers}
                   documents={tenantCustomerDocuments}
+                  groups={customerGroups.filter((g) => g.tenantId === currentTenant.id)}
                   onAddCustomer={handleAddCustomer}
                   onSelectCustomer={() => {}}
                   onAddDocument={handleAddCustomerDocument}
                   onUpdateDocumentStatus={handleUpdateCustomerDocumentStatus}
                   onDeleteDocument={handleDeleteCustomerDocument}
+                  onAddGroup={(grp) => {
+                    const newGrp: CustomerGroup = {
+                      ...grp,
+                      id: `grp-${Date.now()}`,
+                      groupNo: `GRP-KLA-00${customerGroups.length + 1}`,
+                      formationDate: new Date().toISOString().split('T')[0],
+                    };
+                    setCustomerGroups((prev) => [newGrp, ...prev]);
+                  }}
                 />
               )}
 
@@ -1722,6 +2145,7 @@ export default function App() {
                   users={tenantUsers}
                   invitations={tenantInvitations}
                   onInviteUser={handleInviteUser}
+                  onAddUser={handleAddUser}
                   onUpdateUserRole={handleUpdateUserRole}
                   onToggleUserStatus={handleToggleUserStatus}
                   onRevokeInvitation={(invId) =>
@@ -1739,10 +2163,31 @@ export default function App() {
                   auditLogs={tenantAuditLogs}
                 />
               )}
+
+              {activeTab === 'reports' && (
+                <ReportGenerator
+                  tenant={currentTenant}
+                  branch={currentBranch}
+                  currentUser={currentUser}
+                  loans={tenantLoans}
+                  customers={tenantCustomers}
+                  payments={tenantPayments}
+                  products={tenantProducts}
+                  savingsAccounts={tenantSavingsAccounts}
+                  savingsTransactions={tenantSavingsTransactions}
+                  expenses={tenantExpenses}
+                  users={users}
+                  initialReportType={reportParams.type || 'loan_schedule'}
+                  initialLoanId={reportParams.loanId}
+                  initialCustomerId={reportParams.customerId}
+                />
+              )}
             </>
           );
         })()}
-      </main>
+          </main>
+        </div>
+      )}
 
       {/* Global Modals */}
       {showLoanOrigination && (
@@ -1752,6 +2197,7 @@ export default function App() {
           currentUser={currentUser}
           customers={customers.filter((c) => c.tenantId === currentTenant.id)}
           products={loanProducts.filter((p) => p.tenantId === currentTenant.id)}
+          loans={loans.filter((l) => l.tenantId === currentTenant.id)}
           onClose={() => setShowLoanOrigination(false)}
           onSubmitApplication={handleOriginateLoan}
         />
@@ -1779,8 +2225,12 @@ export default function App() {
       {/* Authentication & MFA Switcher Modal */}
       <AuthModal
         isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
+        onClose={() => {
+          setShowAuthModal(false);
+          setSessionLockoutNotice(null);
+        }}
         isMandatory={false}
+        lockoutNotice={sessionLockoutNotice}
         users={users}
         currentUser={currentUser}
         tenants={tenants}
@@ -1797,6 +2247,9 @@ export default function App() {
           if (env) {
             setOperatingEnvironment(env);
           }
+          setLastActivityTime(Date.now());
+          setSessionLockoutNotice(null);
+          setIsAuthenticated(true);
           setShowAuthModal(false);
           logAudit(
             'USER_LOGIN',
@@ -1832,6 +2285,15 @@ export default function App() {
         }
         onTriggerScan={runInstallmentReminderScan}
         lastScanResult={lastReminderScanResult}
+      />
+
+      {/* Session Inactivity Security Warning Modal */}
+      <InactivityWarningModal
+        isOpen={showInactivityWarning && isAuthenticated}
+        inactivityState={inactivityState}
+        onStayLoggedIn={handleStayLoggedIn}
+        onLockNow={handleLockSessionNow}
+        onSimulateLock={handleForceImmediateLock}
       />
 
       {/* Footer */}

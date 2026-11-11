@@ -7,8 +7,10 @@ import {
   Branch,
   AppUser,
   SystemNotification,
+  LoanApplication,
 } from '../types';
 import { formatUGX, formatCompactUGX } from '../utils/finance';
+import { SEED_APPLICATIONS } from '../data/seedData';
 import {
   CreditCard,
   Search,
@@ -32,10 +34,19 @@ import {
   Sparkles,
   RefreshCw,
   Send,
+  ArrowLeftRight,
+  Layers,
+  CheckCircle2,
+  ThumbsUp,
+  ThumbsDown,
+  UserCheck,
+  ArrowUpRight,
+  Award,
 } from 'lucide-react';
 import { exportLoanPortfolioPDF } from '../utils/pdfExport';
 import { LoanCalculatorModal } from './LoanCalculatorModal';
 import { LoanCalculatorWidget } from './LoanCalculatorWidget';
+import { LoanProductComparison } from './LoanProductComparison';
 import {
   findUpcomingInstallments,
   calculateDaysUntilDue,
@@ -48,12 +59,16 @@ interface LoansViewProps {
   loans: Loan[];
   customers: Customer[];
   products: LoanProduct[];
+  applications?: LoanApplication[];
   notifications?: SystemNotification[];
   onOpenOrigination: () => void;
   onQuickCollect: (loan: Loan) => void;
   onRestructureLoan: (loanId: string, newTermMonths: number, reason: string) => void;
   onTriggerReminderScan?: (refDate: string) => void;
   onOpenNotificationsModal?: () => void;
+  onOpenReportGenerator?: (loanId?: string) => void;
+  onUpdateApplicationStage?: (applicationId: string, nextStage: LoanApplication['status'], notes?: string) => void;
+  onDisburseApplication?: (application: LoanApplication) => void;
 }
 
 export const LoansView: React.FC<LoansViewProps> = ({
@@ -63,14 +78,25 @@ export const LoansView: React.FC<LoansViewProps> = ({
   loans,
   customers,
   products,
+  applications: propApplications,
   notifications = [],
   onOpenOrigination,
   onQuickCollect,
   onRestructureLoan,
   onTriggerReminderScan,
   onOpenNotificationsModal,
+  onOpenReportGenerator,
+  onUpdateApplicationStage,
+  onDisburseApplication,
 }) => {
-  const [activeLoansSubTab, setActiveLoansSubTab] = useState<'servicing' | 'calculator'>('servicing');
+  const [activeLoansSubTab, setActiveLoansSubTab] = useState<'servicing' | 'pipeline' | 'calculator' | 'comparison'>('servicing');
+  const [pipelineStageFilter, setPipelineStageFilter] = useState<'all' | 'submitted' | 'under_review' | 'approved' | 'disbursed' | 'rejected'>('all');
+  const [pipelineTierFilter, setPipelineTierFilter] = useState<'all' | 'tier1_officer' | 'tier2_manager' | 'tier3_committee'>('all');
+  const [localApplications, setLocalApplications] = useState<LoanApplication[]>(
+    propApplications && propApplications.length > 0 ? propApplications : SEED_APPLICATIONS
+  );
+  const [rejectionModalApp, setRejectionModalApp] = useState<LoanApplication | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'in_arrears' | 'settled'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
@@ -116,7 +142,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
             Loan Servicing & Amortization Schedules
           </h2>
           <p className="text-xs text-slate-500">
-            Monitor performing loans, inspect statutory schedules, compute early payoff quotes, and process restructures.
+            Monitor performing loans, inspect statutory schedules, compare loan products side-by-side, and process restructures.
           </p>
         </div>
 
@@ -137,6 +163,18 @@ export const LoansView: React.FC<LoansViewProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setActiveLoansSubTab('pipeline')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeLoansSubTab === 'pipeline'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-blue-600" />
+              <span>Application Pipeline ({localApplications.length})</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveLoansSubTab('calculator')}
               className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
                 activeLoansSubTab === 'calculator'
@@ -146,6 +184,18 @@ export const LoansView: React.FC<LoansViewProps> = ({
             >
               <Calculator className="w-3.5 h-3.5 text-emerald-600" />
               <span>Loan Calculator</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLoansSubTab('comparison')}
+              className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeLoansSubTab === 'comparison'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Product Comparison</span>
             </button>
           </div>
 
@@ -158,6 +208,17 @@ export const LoansView: React.FC<LoansViewProps> = ({
             Export PDF Report
           </button>
 
+          {onOpenReportGenerator && (
+            <button
+              onClick={() => onOpenReportGenerator()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs shadow-xs transition-colors cursor-pointer"
+              title="Open print-friendly statutory report generator"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-600" />
+              Print Desk
+            </button>
+          )}
+
           <button
             onClick={onOpenOrigination}
             className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
@@ -168,7 +229,463 @@ export const LoansView: React.FC<LoansViewProps> = ({
         </div>
       </div>
 
-      {activeLoansSubTab === 'calculator' ? (
+      {activeLoansSubTab === 'pipeline' ? (
+        <div className="space-y-6">
+          {/* Pipeline KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-xs text-slate-500 font-medium">Total In Pipeline</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{localApplications.length}</div>
+              <div className="text-[11px] text-blue-600 font-medium mt-1">Tier 4 Loan Applications</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-xs text-slate-500 font-medium">Under Review / Committee</div>
+              <div className="text-2xl font-bold text-amber-600 mt-1">
+                {localApplications.filter((a) => a.status === 'under_review' || a.status === 'submitted').length}
+              </div>
+              <div className="text-[11px] text-amber-700 font-medium mt-1">Affordability checks run</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-xs text-slate-500 font-medium">Approved for Payout</div>
+              <div className="text-2xl font-bold text-emerald-600 mt-1">
+                {localApplications.filter((a) => a.status === 'approved').length}
+              </div>
+              <div className="text-[11px] text-emerald-700 font-medium mt-1">Ready for Mobile Money / Bank</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+              <div className="text-xs text-slate-500 font-medium">Disbursed Facilities</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">
+                {localApplications.filter((a) => a.status === 'disbursed').length}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">Actively servicing</div>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="text-slate-500 font-semibold mr-1">Stage:</span>
+              {[
+                { id: 'all', label: 'All Stages' },
+                { id: 'submitted', label: 'Submitted' },
+                { id: 'under_review', label: 'Under Review' },
+                { id: 'approved', label: 'Approved' },
+                { id: 'disbursed', label: 'Disbursed' },
+                { id: 'rejected', label: 'Rejected' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setPipelineStageFilter(st.id as any)}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition ${
+                    pipelineStageFilter === st.id
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500 font-semibold">Routing Tier:</span>
+              <select
+                value={pipelineTierFilter}
+                onChange={(e) => setPipelineTierFilter(e.target.value as any)}
+                className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-slate-700 font-medium focus:outline-none focus:border-blue-500"
+              >
+                <option value="all">All Approval Tiers</option>
+                <option value="tier1_officer">Tier 1: Loan Officer (&lt;= UGX 2M)</option>
+                <option value="tier2_manager">Tier 2: Branch Manager (UGX 2M - 10M)</option>
+                <option value="tier3_committee">Tier 3: Credit Committee (&gt; UGX 10M)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Applications List */}
+          <div className="space-y-4">
+            {localApplications
+              .filter((app) => {
+                const matchesStage = pipelineStageFilter === 'all' || app.status === pipelineStageFilter;
+                const matchesTier = pipelineTierFilter === 'all' || app.routingTier === pipelineTierFilter;
+                return matchesStage && matchesTier;
+              })
+              .map((app) => {
+                const applicant = customers.find((c) => c.id === app.customerId);
+                const product = products.find((p) => p.id === app.productId);
+                const g1 = customers.find((c) => c.id === app.guarantorCustomerId);
+                const score = app.affordabilityCheck;
+
+                return (
+                  <div
+                    key={app.id}
+                    className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 hover:border-blue-300 transition"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={
+                            app.applicantPhotoUrl ||
+                            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+                          }
+                          alt="Applicant"
+                          className="w-12 h-12 rounded-full object-cover border-2 border-slate-200 shadow-xs shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">
+                              {applicant?.fullName || 'Applicant'}
+                            </span>
+                            <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                              {app.applicationNo}
+                            </span>
+                            {/* Routing Tier Badge */}
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                              {app.routingTier === 'tier1_officer'
+                                ? 'Tier 1: Loan Officer'
+                                : app.routingTier === 'tier2_manager'
+                                ? 'Tier 2: Branch Manager'
+                                : 'Tier 3: Credit Committee'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {applicant?.occupation} • {applicant?.phone} • NIN: {applicant?.kyc.idNumberMasked}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Status badge */}
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                            app.status === 'approved'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                              : app.status === 'under_review'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-300'
+                              : app.status === 'disbursed'
+                              ? 'bg-purple-50 text-purple-700 border border-purple-300'
+                              : app.status === 'rejected'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-300'
+                              : 'bg-slate-100 text-slate-700 border border-slate-300'
+                          }`}
+                        >
+                          {app.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Loan & Product specs */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs bg-slate-50 p-3.5 rounded-lg border border-slate-100">
+                      <div>
+                        <div className="text-slate-400 font-medium">Loan Product</div>
+                        <div className="font-bold text-slate-800 mt-0.5">{product?.name || 'Standard Micro'}</div>
+                        <div className="text-[11px] text-slate-500">{product?.annualRatePercent}% {product?.interestMethod}</div>
+                      </div>
+
+                      <div>
+                        <div className="text-slate-400 font-medium">Requested Principal</div>
+                        <div className="font-bold text-slate-900 font-mono text-sm mt-0.5">
+                          {formatUGX(app.requestedAmount)}
+                        </div>
+                        <div className="text-[11px] text-slate-500">Tenure: {app.requestedTermMonths} Months</div>
+                      </div>
+
+                      <div>
+                        <div className="text-slate-400 font-medium">Collateral Declared</div>
+                        <div className="font-medium text-slate-800 truncate mt-0.5" title={app.collateralDescription}>
+                          {app.collateralDescription}
+                        </div>
+                        <div className="text-[11px] text-slate-500">Est. Value: {formatUGX(app.collateralEstimatedValue)}</div>
+                      </div>
+
+                      <div>
+                        <div className="text-slate-400 font-medium">Submission Timestamp</div>
+                        <div className="font-mono text-slate-700 mt-0.5">
+                          {new Date(app.submittedAt).toLocaleDateString()}
+                        </div>
+                        <div className="text-[11px] text-slate-500">By Officer Grace</div>
+                      </div>
+                    </div>
+
+                    {/* Automated Affordability Scorecard */}
+                    {score && (
+                      <div className="p-3.5 bg-slate-900 rounded-xl text-white space-y-2.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-300 uppercase text-[11px] flex items-center gap-1.5">
+                            <Award className="w-4 h-4 text-emerald-400" />
+                            Automated Underwriting Scorecard (UMRA Prudential Rules)
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded font-bold text-[11px] ${
+                              score.scorecardVerdict === 'APPROVED_AUTOMATED'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : score.scorecardVerdict === 'BORDERLINE_COMMITTEE'
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}
+                          >
+                            {score.scorecardVerdict.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-slate-800">
+                          <div>
+                            <div className="text-slate-400 text-[10px]">DSTI Ratio</div>
+                            <div className={`font-mono font-bold ${score.ruleChecks.dstiPassed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {score.dstiRatioPercent}% {score.ruleChecks.dstiPassed ? '✓' : '✗'}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Cap: 50% max</div>
+                          </div>
+
+                          <div>
+                            <div className="text-slate-400 text-[10px]">Monthly Disposable Buffer</div>
+                            <div className={`font-mono font-bold ${score.ruleChecks.disposableBufferPassed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {formatUGX(score.disposableBufferUGX)} {score.ruleChecks.disposableBufferPassed ? '✓' : '✗'}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Min: UGX 300,000</div>
+                          </div>
+
+                          <div>
+                            <div className="text-slate-400 text-[10px]">Collateral Coverage</div>
+                            <div className={`font-mono font-bold ${score.ruleChecks.collateralPassed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {score.collateralCoverageRatioPercent}% {score.ruleChecks.collateralPassed ? '✓' : '✗'}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Min: 120% coverage</div>
+                          </div>
+
+                          <div>
+                            <div className="text-slate-400 text-[10px]">Recommended Limit</div>
+                            <div className="font-mono font-bold text-emerald-400">
+                              {formatCompactUGX(score.recommendedLimitUGX)}
+                            </div>
+                            <div className="text-[10px] text-slate-500">Prudential Cap</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Dual Guarantors Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div>
+                        <span className="text-slate-400 font-semibold uppercase text-[10px]">Guarantor 1 (Primary)</span>
+                        <div className="font-semibold text-slate-800 mt-0.5">
+                          {g1?.fullName || 'Betty Nabakooza'} ({g1?.phone || '+256 701 889 123'})
+                        </div>
+                        <div className="text-[11px] text-slate-500">NIN: {g1?.kyc.idNumberMasked || 'CF9107****829M'}</div>
+                      </div>
+
+                      <div>
+                        <span className="text-slate-400 font-semibold uppercase text-[10px]">Guarantor 2 (Secondary)</span>
+                        <div className="font-semibold text-slate-800 mt-0.5">
+                          {app.guarantor2Name || 'David Kigozi'} ({app.guarantor2Phone || '+256 772 901 884'})
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {app.guarantor2Relationship || 'Business Supplier'} • NIN: {app.guarantor2Nin || 'CM800188291M'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stage History */}
+                    {app.stageHistory && app.stageHistory.length > 0 && (
+                      <div className="text-[11px] text-slate-500 space-y-1 bg-slate-50/60 p-2.5 rounded-lg border border-slate-100">
+                        <div className="font-semibold text-slate-600 uppercase text-[10px]">Audit Workflow Trail</div>
+                        <div className="space-y-1">
+                          {app.stageHistory.map((h, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                              <span className="font-semibold text-slate-700 capitalize">{h.stage.replace('_', ' ')}</span>
+                              <span className="text-slate-400 font-mono">({new Date(h.transitionedAt).toLocaleString()})</span>
+                              {h.notes && <span className="text-slate-600 italic">- {h.notes}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Workflow Action Buttons */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <div className="text-xs text-slate-500 font-medium">
+                        {app.status === 'submitted' && 'Pending Underwriting Verification'}
+                        {app.status === 'under_review' && 'Routed to Designated Officer / Committee'}
+                        {app.status === 'approved' && 'Approved: Awaiting Cashier / MoMo Disbursement'}
+                        {app.status === 'disbursed' && 'Funds successfully disbursed to borrower'}
+                        {app.status === 'rejected' && 'Application declined under policy rules'}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Action 1: Advance Stage */}
+                        {app.status === 'submitted' && (
+                          <button
+                            onClick={() => {
+                              const updated: LoanApplication = {
+                                ...app,
+                                status: 'under_review',
+                                stageHistory: [
+                                  ...(app.stageHistory || []),
+                                  {
+                                    stage: 'under_review',
+                                    transitionedAt: new Date().toISOString(),
+                                    performedByUserId: currentUser.id,
+                                    notes: 'KYC verified & routed to approval tier.',
+                                  },
+                                ],
+                              };
+                              setLocalApplications((prev) => prev.map((a) => (a.id === app.id ? updated : a)));
+                              if (onUpdateApplicationStage) onUpdateApplicationStage(app.id, 'under_review');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition shadow-xs"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            Verify &amp; Route for Approval
+                          </button>
+                        )}
+
+                        {app.status === 'under_review' && (
+                          <button
+                            onClick={() => {
+                              const updated: LoanApplication = {
+                                ...app,
+                                status: 'approved',
+                                decisionAt: new Date().toISOString(),
+                                reviewedByUserId: currentUser.id,
+                                approvalNotes: `Approved under ${app.routingTier} policy authority.`,
+                                stageHistory: [
+                                  ...(app.stageHistory || []),
+                                  {
+                                    stage: 'approved',
+                                    transitionedAt: new Date().toISOString(),
+                                    performedByUserId: currentUser.id,
+                                    notes: 'Approved for disbursement.',
+                                  },
+                                ],
+                              };
+                              setLocalApplications((prev) => prev.map((a) => (a.id === app.id ? updated : a)));
+                              if (onUpdateApplicationStage) onUpdateApplicationStage(app.id, 'approved');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                            Approve Application
+                          </button>
+                        )}
+
+                        {app.status === 'approved' && (
+                          <button
+                            onClick={() => {
+                              const updated: LoanApplication = {
+                                ...app,
+                                status: 'disbursed',
+                                stageHistory: [
+                                  ...(app.stageHistory || []),
+                                  {
+                                    stage: 'disbursed',
+                                    transitionedAt: new Date().toISOString(),
+                                    performedByUserId: currentUser.id,
+                                    notes: 'Disbursed via Mobile Money / Bank Gateway.',
+                                  },
+                                ],
+                              };
+                              setLocalApplications((prev) => prev.map((a) => (a.id === app.id ? updated : a)));
+                              if (onDisburseApplication) onDisburseApplication(app);
+                              if (onUpdateApplicationStage) onUpdateApplicationStage(app.id, 'disbursed');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition shadow-xs"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            Disburse via Mobile Money
+                          </button>
+                        )}
+
+                        {/* Decline Button */}
+                        {(app.status === 'submitted' || app.status === 'under_review') && (
+                          <button
+                            onClick={() => {
+                              setRejectionModalApp(app);
+                              setRejectionReason('Affordability buffer or collateral requirements insufficient.');
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold text-xs transition"
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                            Decline
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Rejection Modal */}
+          {rejectionModalApp && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+              <div className="bg-white rounded-xl border border-slate-200 max-w-md w-full p-5 space-y-4 shadow-xl">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <h4 className="font-bold text-slate-900 text-sm">Decline Loan Application</h4>
+                  <button onClick={() => setRejectionModalApp(null)} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-xs text-slate-600">
+                  Please provide the statutory reason for declining application {rejectionModalApp.applicationNo}:
+                </div>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  className="w-full h-24 p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-rose-500"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setRejectionModalApp(null)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      const updated: LoanApplication = {
+                        ...rejectionModalApp,
+                        status: 'rejected',
+                        approvalNotes: rejectionReason,
+                        stageHistory: [
+                          ...(rejectionModalApp.stageHistory || []),
+                          {
+                            stage: 'rejected',
+                            transitionedAt: new Date().toISOString(),
+                            performedByUserId: currentUser.id,
+                            notes: rejectionReason,
+                          },
+                        ],
+                      };
+                      setLocalApplications((prev) => prev.map((a) => (a.id === rejectionModalApp.id ? updated : a)));
+                      if (onUpdateApplicationStage) onUpdateApplicationStage(rejectionModalApp.id, 'rejected', rejectionReason);
+                      setRejectionModalApp(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700"
+                  >
+                    Confirm Rejection
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : activeLoansSubTab === 'comparison' ? (
+        <LoanProductComparison
+          tenant={tenant}
+          branch={branch}
+          products={products}
+          onOriginateWithProduct={() => {
+            onOpenOrigination();
+          }}
+          onSwitchToCalculator={() => {
+            setActiveLoansSubTab('calculator');
+          }}
+        />
+      ) : activeLoansSubTab === 'calculator' ? (
         <LoanCalculatorWidget
           tenant={tenant}
           branch={branch}
@@ -176,6 +693,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
           currentUser={currentUser}
           onOriginateWithParams={() => {
             onOpenOrigination();
+          }}
+          onSwitchToComparison={() => {
+            setActiveLoansSubTab('comparison');
           }}
         />
       ) : (
@@ -588,12 +1108,23 @@ export const LoansView: React.FC<LoansViewProps> = ({
               <span className="text-xs text-slate-500">
                 Uganda UMRA Day-Count Convention: 30/360 deterministic schedule.
               </span>
-              <button
-                onClick={() => onQuickCollect(selectedLoan)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer"
-              >
-                Collect Repayment on this Loan
-              </button>
+              <div className="flex items-center gap-2">
+                {onOpenReportGenerator && (
+                  <button
+                    onClick={() => onOpenReportGenerator(selectedLoan.id)}
+                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                    Print Schedule Report
+                  </button>
+                )}
+                <button
+                  onClick={() => onQuickCollect(selectedLoan)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer"
+                >
+                  Collect Repayment on this Loan
+                </button>
+              </div>
             </div>
           </div>
         </div>
